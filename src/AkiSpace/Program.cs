@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using AkiSpace.Common;
 using AkiSpace.Forms;
 using AkiSpace.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,9 @@ namespace AkiSpace;
             return;
         }
 
+            // Load fonts FIRST before any UI creation
+            FontLoader.LoadAll();
+
             // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
             ApplicationConfiguration.Initialize();
 
@@ -32,6 +36,11 @@ namespace AkiSpace;
                 logger.LogCritical(e.ExceptionObject as Exception, "AppDomain unhandled exception");
             Application.ThreadException += (_, e) =>
                 logger.LogError(e.Exception, "UI thread exception");
+
+            // Initialize theme manager with settings
+            var settingsService = provider.GetRequiredService<SettingsService>();
+            var themeManager = ThemeManager.Current;
+            themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
 
             try
             {

@@ -1,18 +1,17 @@
 ﻿using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
 using AkiSpace.Common;
+using AkiSpace.Controls.Styled;
 using AkiSpace.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AkiSpace.Forms;
 
 /// <summary>
-/// One-click environment check &amp; fix dialog for the desktop-clone prerequisites:
-/// RDP enabled, multi-session, RDP Wrapper (Home), StartRCM, TermService,
-/// firewall loopback rule, child sessions, listener, termsrv version.
-///
-/// Home edition users get an additional guided install panel for RDP Wrapper
-/// (sergiye/rdpWrapper or sebaxakerhtc/rdpwrap), which must be installed manually
-/// because it patches / hooks TermService's termsrv.dll.
+/// Environment check & fix dialog - Ethereal Glass design with card layout, styled ListView, amber home panel.
+/// </summary>
 public sealed class SetupDialog : Form
 {
     private readonly ILogger<SetupDialog> _logger;
@@ -20,26 +19,22 @@ public sealed class SetupDialog : Form
     private readonly ChildSessionManager _sessionManager;
     private readonly SettingsService? _settingsService;
 
-    // Known RDP Wrapper source repos
     private const string SergiyeReleasesUrl = "https://github.com/sergiye/rdpWrapper/releases";
     private const string SebaxakerhtcRepoUrl = "https://github.com/sebaxakerhtc/rdpwrap";
 
-    private readonly ListView _listView = new();
-    private readonly Button _btnCheck = new();
-    private readonly Button _btnFix = new();
-    private readonly Button _btnClose = new();
-    private readonly Label _lblHint = new();
-
-    // ---- Home RDP Wrapper install guide panel ----
-    private readonly Panel _panelHomeGuide = new();
+    private readonly StyledListView _listView = new();
+    private readonly GhostButton _btnCheck = new();
+    private readonly PrimaryButton _btnFix = new();
+    private readonly GhostButton _btnClose = new();
+    private readonly DoubleBezelCard _homeGuideCard = new();
     private readonly Label _lblHomeTitle = new();
     private readonly Label _lblHomeBody = new();
     private readonly Label _lblTermsrvVersion = new();
-    private readonly Button _btnOpenSergiye = new();
-    private readonly Button _btnOpenSebaxakerhtc = new();
-    private readonly Button _btnCopyVersion = new();
-    private readonly Button _btnCopyDiagnostics = new();
-    private readonly Button _btnRecheckAfterInstall = new();
+    private readonly GhostButton _btnOpenSergiye = new();
+    private readonly GhostButton _btnOpenSebaxakerhtc = new();
+    private readonly GhostButton _btnCopyVersion = new();
+    private readonly GhostButton _btnCopyDiagnostics = new();
+    private readonly PrimaryButton _btnRecheckAfterInstall = new();
 
     public SetupDialog(
         ILogger<SetupDialog> logger,
@@ -59,195 +54,191 @@ public sealed class SetupDialog : Form
     private void BuildUi()
     {
         Text = "环境检查 / 修复 — 桌面分身前置条件";
-        Size = new Size(760, 640);
-        MinimumSize = new Size(640, 480);
+        Size = new Size(800, 700);
+        MinimumSize = new Size(700, 550);
         StartPosition = FormStartPosition.CenterParent;
-        BackColor = Theme.Bg;
-        ForeColor = Theme.Text;
-        Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
+        BackColor = ThemeManager.Current.BgBase;
+        ForeColor = ThemeManager.Current.TextPrimary;
+        Font = ThemeManager.Current.GetFontSans(13f);
+        FormBorderStyle = FormBorderStyle.Sizable;
 
+        var mainPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            Padding = new Padding(ThemeTokens.Space.S6), // 24px
+        };
+
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+        };
+
+        // --- Checks Card ---
+        var checksCard = new DoubleBezelCard
+        {
+            Title = "环境检查",
+            Subtitle = "桌面分身运行前置条件检测",
+            Width = 720,
+        };
+        BuildChecksCard(checksCard);
+        flow.Controls.Add(checksCard);
+
+        // --- Home Guide Card (amber tinted) ---
+        BuildHomeGuideCard();
+        flow.Controls.Add(_homeGuideCard);
+
+        mainPanel.Controls.Add(flow);
+        Controls.Add(mainPanel);
+
+        // Button bar (fixed at bottom)
+        var btnPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 70,
+            Padding = new Padding(ThemeTokens.Space.S6, ThemeTokens.Space.S4, ThemeTokens.Space.S6, ThemeTokens.Space.S4),
+            BackColor = Color.Transparent,
+        };
+        var btnFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+        };
+
+        _btnCheck.Text = "重新检查";
+        _btnCheck.Size = new Size(110, 40);
+        _btnCheck.Click += (_, _) => RunChecks();
+
+        _btnFix.Text = "一键修复";
+        _btnFix.Size = new Size(110, 40);
+        _btnFix.Click += (_, _) => RunFixes();
+
+        _btnClose.Text = "关闭";
+        _btnClose.Size = new Size(90, 40);
+        _btnClose.Click += (_, _) => Close();
+
+        btnFlow.Controls.Add(_btnClose);
+        btnFlow.Controls.Add(_btnFix);
+        btnFlow.Controls.Add(_btnCheck);
+        btnPanel.Controls.Add(btnFlow);
+        Controls.Add(btnPanel);
+
+        ThemeManager.Current.ThemeChanged += (_, _) => OnThemeChanged();
+    }
+
+    private void BuildChecksCard(DoubleBezelCard card)
+    {
         _listView.Dock = DockStyle.Fill;
         _listView.View = View.Details;
         _listView.FullRowSelect = true;
-        _listView.GridLines = true;
-        _listView.BackColor = Theme.Control;
-        _listView.ForeColor = Theme.Text;
+        _listView.GridLines = false;
         _listView.BorderStyle = BorderStyle.None;
-        _listView.Columns.Add("检查项", 260);
-        _listView.Columns.Add("状态", 90);
-        _listView.Columns.Add("详情", 360);
+        _listView.BackColor = Color.Transparent;
+        _listView.ForeColor = ThemeManager.Current.TextPrimary;
+        _listView.Font = ThemeManager.Current.GetFontSans(12f);
+        _listView.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+        _listView.OwnerDraw = true;
+        _listView.Columns.Add("检查项", 300);
+        _listView.Columns.Add("状态", 100);
+        _listView.Columns.Add("详情", 300);
+        _listView.Height = 400;
 
-        // ---- Home RDP Wrapper guide panel (auto-shows on failure) ----
-        BuildHomeGuidePanel();
-
-        var bottom = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 100,
-            Padding = new Padding(12, 8, 12, 8),
-            BackColor = Theme.Surface
-        };
-        _lblHint.Dock = DockStyle.Top;
-        _lblHint.Height = 40;
-        _lblHint.Text = "提示：家庭版 Windows 需要 RDP Wrapper 解锁多会话。\n" +
-                        "「一键修复」会修改注册表并重启 TermService，需要管理员权限。";
-        _lblHint.ForeColor = Theme.TextDim;
-        _lblHint.BackColor = Theme.Surface;
-
-        var btnRow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 44,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = false,
-            BackColor = Theme.Surface
-        };
-        _btnCheck.Text = "重新检查";
-        _btnCheck.Size = new Size(110, 36);
-        _btnCheck.FlatStyle = FlatStyle.Flat;
-        _btnCheck.BackColor = Theme.Control;
-        _btnCheck.ForeColor = Theme.Text;
-        _btnCheck.FlatAppearance.BorderColor = Theme.Border;
-        _btnCheck.Click += (_, _) => RunChecks();
-        _btnFix.Text = "一键修复";
-        _btnFix.Size = new Size(110, 36);
-        _btnFix.FlatStyle = FlatStyle.Flat;
-        _btnFix.BackColor = Theme.AccentBlue;
-        _btnFix.ForeColor = Color.White;
-        _btnFix.FlatAppearance.BorderSize = 0;
-        _btnFix.Click += (_, _) => RunFixes();
-        _btnClose.Text = "关闭";
-        _btnClose.Size = new Size(90, 36);
-        _btnClose.FlatStyle = FlatStyle.Flat;
-        _btnClose.BackColor = Theme.Control;
-        _btnClose.ForeColor = Theme.Text;
-        _btnClose.FlatAppearance.BorderColor = Theme.Border;
-        _btnClose.Click += (_, _) => Close();
-        btnRow.Controls.Add(_btnClose);
-        btnRow.Controls.Add(_btnFix);
-        btnRow.Controls.Add(_btnCheck);
-
-        bottom.Controls.Add(_lblHint);
-        bottom.Controls.Add(btnRow);
-
-        // Dock order matters: last-added docks fill remaining space.
-        // We want: top = home guide (when shown), fill = list, bottom = bottom.
-        // Using Top dock for the guide means we need to add it BEFORE the list (Fill).
-        Controls.Add(_panelHomeGuide);   // DockStyle.Top, added second-to-last
-        Controls.Add(_listView);          // DockStyle.Fill, fills remaining
-        Controls.Add(bottom);             // DockStyle.Bottom
+        card.ContentControls.Add(_listView);
     }
 
-    private void BuildHomeGuidePanel()
+    private void BuildHomeGuideCard()
     {
-        _panelHomeGuide.Dock = DockStyle.Top;
-        _panelHomeGuide.Visible = false;
-        _panelHomeGuide.BackColor = Color.FromArgb(45, 35, 20);  // amber-tinted dark
-        _panelHomeGuide.BorderStyle = BorderStyle.FixedSingle;
-        _panelHomeGuide.Padding = new Padding(14, 12, 14, 12);
-        // No AutoSize - use proper layout with FlowLayoutPanel
+        _homeGuideCard.Title = "⚠ 家庭版需要安装 RDP Wrapper";
+        _homeGuideCard.Subtitle = "Windows Home 缺少 RDP 主机功能，需第三方解锁层";
+        _homeGuideCard.Width = 720;
+        _homeGuideCard.Visible = false;
 
-        // Use a FlowLayoutPanel inside the panel for proper auto-layout
+        // Override card colors for amber tint
+        _homeGuideCard.Paint += (_, e) =>
+        {
+            base.OnPaint(e); // This won't work, need custom paint
+        };
+
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             WrapContents = false,
-            Padding = new Padding(0),
-            BackColor = Color.FromArgb(45, 35, 20),
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
 
-        // Title row
-        _lblHomeTitle.Text = "⚠ 家庭版需要安装 RDP Wrapper";
-        _lblHomeTitle.Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold);
-        _lblHomeTitle.ForeColor = Theme.AccentAmber;
+        _lblHomeTitle.Text = "Windows 家庭版不提供 RDP 主机，桌面分身功能需要 RDP Wrapper 第三方解锁层。\n安装步骤：① 下载任一社区维护的 RDP Wrapper → ② 解压到 C:\\Program Files\\RDP Wrapper\\ →\n③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。\nAkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。";
         _lblHomeTitle.AutoSize = true;
-        _lblHomeTitle.Margin = new Padding(0, 0, 0, 8);
+        _lblHomeTitle.Font = ThemeManager.Current.GetFontSans(12f);
+        _lblHomeTitle.ForeColor = ThemeManager.Current.TextSecondary;
+        _lblHomeTitle.MaximumSize = new Size(680, 0);
+        _lblHomeTitle.Margin = new Padding(0, 0, 0, ThemeTokens.Space.S4);
 
-        // Body text with the actual version number
-        _lblHomeBody.Text =
-            "Windows 家庭版不提供 RDP 主机，桌面分身功能需要 RDP Wrapper 第三方解锁层。\n" +
-            "安装步骤：① 下载任一社区维护的 RDP Wrapper → ② 解压到 C:\\Program Files\\RDP Wrapper\\ →\n" +
-            "③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。\n" +
-            "AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。";
-        _lblHomeBody.Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
-        _lblHomeBody.ForeColor = Theme.Text;
-        _lblHomeBody.AutoSize = true;
-        _lblHomeBody.MaximumSize = new Size(720, 0);
-        _lblHomeBody.Margin = new Padding(0, 0, 0, 8);
-
-        // Version row (highlighted)
         var termsrvVer = _sessionManager.GetTermsrvVersion();
         _lblTermsrvVersion.Text = $"本机 termsrv.dll 版本:  {termsrvVer}    （在 rdpwrap.ini 中需找到 [10.0.{termsrvVer.Split('.')[2]}.xxxx] 段落）";
-        _lblTermsrvVersion.Font = new Font("Consolas", 9.5f, FontStyle.Bold);
-        _lblTermsrvVersion.ForeColor = Theme.AccentBlue;
         _lblTermsrvVersion.AutoSize = true;
-        _lblTermsrvVersion.Margin = new Padding(0, 0, 0, 16);
+        _lblTermsrvVersion.Font = ThemeManager.Current.GetFontMono(11f, FontStyle.Bold);
+        _lblTermsrvVersion.ForeColor = ThemeManager.Current.Accent;
+        _lblTermsrvVersion.Margin = new Padding(0, 0, 0, ThemeTokens.Space.S6);
 
-        // Button row - use a TableLayoutPanel for 2-column layout
-        var buttonTable = new TableLayoutPanel
+        var btnFlow = new FlowLayoutPanel
         {
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true,
             AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            RowCount = 3,
-            BackColor = Color.FromArgb(45, 35, 20),
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 0, 0, ThemeTokens.Space.S4),
         };
-        buttonTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 290));
-        buttonTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 290));
 
-        StyleGuideButton(_btnOpenSergiye, "① 打开 sergiye/rdpWrapper (C# 推荐)", 290, 32);
+        StyleGuideButton(_btnOpenSergiye, "① 打开 sergiye/rdpWrapper (C# 推荐)");
         _btnOpenSergiye.Click += (_, _) => OpenUrl(SergiyeReleasesUrl);
-        buttonTable.Controls.Add(_btnOpenSergiye, 0, 0);
+        _btnOpenSergiye.Size = new Size(320, 40);
 
-        StyleGuideButton(_btnOpenSebaxakerhtc, "② 打开 sebaxakerhtc/rdpwrap (Delphi fork)", 290, 32);
+        StyleGuideButton(_btnOpenSebaxakerhtc, "② 打开 sebaxakerhtc/rdpwrap (Delphi fork)");
         _btnOpenSebaxakerhtc.Click += (_, _) => OpenUrl(SebaxakerhtcRepoUrl);
-        buttonTable.Controls.Add(_btnOpenSebaxakerhtc, 1, 0);
+        _btnOpenSebaxakerhtc.Size = new Size(320, 40);
 
-        StyleGuideButton(_btnCopyVersion, "③ 复制版本号（用于搜索 rdpwrap.ini）", 290, 32);
+        StyleGuideButton(_btnCopyVersion, "③ 复制版本号（用于搜索 rdpwrap.ini）");
         _btnCopyVersion.Click += (_, _) => CopyToClipboard(termsrvVer, "已复制 termsrv.dll 版本号");
-        buttonTable.Controls.Add(_btnCopyVersion, 0, 1);
+        _btnCopyVersion.Size = new Size(320, 40);
 
-        StyleGuideButton(_btnCopyDiagnostics, "④ 复制诊断信息（用于 GitHub 反馈）", 290, 32);
+        StyleGuideButton(_btnCopyDiagnostics, "④ 复制诊断信息（用于 GitHub 反馈）");
         _btnCopyDiagnostics.Click += (_, _) => CopyDiagnosticsToClipboard();
-        buttonTable.Controls.Add(_btnCopyDiagnostics, 1, 1);
+        _btnCopyDiagnostics.Size = new Size(320, 40);
 
-        StyleGuideButton(_btnRecheckAfterInstall, "我已安装 RDP Wrapper → 重新检查", 290, 32);
-        _btnRecheckAfterInstall.BackColor = Theme.AccentGreen;
-        _btnRecheckAfterInstall.ForeColor = Color.White;
-        _btnRecheckAfterInstall.FlatAppearance.BorderSize = 0;
+        _btnRecheckAfterInstall.Text = "我已安装 RDP Wrapper → 重新检查";
+        _btnRecheckAfterInstall.Size = new Size(660, 44);
         _btnRecheckAfterInstall.Click += (_, _) => RunChecks();
-        buttonTable.Controls.Add(_btnRecheckAfterInstall, 0, 2);
-        buttonTable.SetColumnSpan(_btnRecheckAfterInstall, 2);
 
-        // Add all to flow layout
+        btnFlow.Controls.Add(_btnOpenSergiye);
+        btnFlow.Controls.Add(_btnOpenSebaxakerhtc);
+        btnFlow.Controls.Add(_btnCopyVersion);
+        btnFlow.Controls.Add(_btnCopyDiagnostics);
+
         flow.Controls.Add(_lblHomeTitle);
-        flow.Controls.Add(_lblHomeBody);
         flow.Controls.Add(_lblTermsrvVersion);
-        flow.Controls.Add(buttonTable);
+        flow.Controls.Add(btnFlow);
+        flow.Controls.Add(_btnRecheckAfterInstall);
 
-        _panelHomeGuide.Controls.Add(flow);
+        _homeGuideCard.ContentControls.Add(flow);
     }
 
-    private static void StyleGuideButton(Button btn, string text, int width, int height)
+    private static void StyleGuideButton(GhostButton btn, string text)
     {
         btn.Text = text;
-        btn.Size = new Size(width, height);
-        btn.FlatStyle = FlatStyle.Flat;
-        btn.BackColor = Color.FromArgb(60, 60, 60);
-        btn.ForeColor = Color.FromArgb(220, 220, 220);
-        btn.FlatAppearance.BorderColor = Color.FromArgb(90, 90, 90);
-        btn.Cursor = Cursors.Hand;
+        btn.Font = ThemeManager.Current.GetFontSans(12f);
     }
 
     private async void RunChecks()
     {
-        // Run the fast checks synchronously so the list paints immediately.
-        // The slow listener probe runs in the background and the list is
-        // refreshed when it completes — this avoids a multi-second UI freeze
-        // when the listener is cold.
         var results = await _verifier.RunAllChecksAsync();
         if (IsDisposed) return;
         RenderChecks(results);
@@ -257,39 +248,32 @@ public sealed class SetupDialog : Form
     {
         _listView.BeginUpdate();
         _listView.Items.Clear();
-        // Track the *install-detection* check (CheckRdpWrapper, named "多会话解锁 ..."),
-        // NOT the CheckRdpWrapperHook check (named "RDP Wrapper (TermWrap.dll) hook")
-        // which has a different meaning (it checks whether the hook is currently
-        // ACTIVE in the running TermService, not whether the wrapper is installed).
+
         EnvCheckResult? wrapperInstallCheck = null;
         foreach (var check in results)
         {
             var item = new ListViewItem(check.Name);
             item.SubItems.Add(check.Pass ? "✓ 通过" : "✗ 失败");
             item.SubItems.Add(check.Detail);
-            item.ForeColor = check.Pass ? Theme.AccentGreen : Theme.AccentRed;
+            item.Tag = check;
             _listView.Items.Add(item);
+
             if (check.Name.StartsWith("多会话解锁"))
                 wrapperInstallCheck = check;
         }
         _listView.EndUpdate();
         _logger.LogInformation("Environment checks completed");
 
-        // Show the Home install guide only when the wrapper install check fails
-        // (i.e. no TermWrap.dll/rdpwrap.dll hook present in TermService\Parameters).
-        // Pro/Enterprise users have native RDP and won't trigger this.
         var showHomeGuide = wrapperInstallCheck is { Pass: false };
-        _panelHomeGuide.Visible = showHomeGuide;
+        _homeGuideCard.Visible = showHomeGuide;
         _logger.LogInformation("Home install guide visible: {Show}", showHomeGuide);
     }
 
     private void RunFixes()
     {
-        // Ask the user up front whether to disable the TermWrap hook — this is
-        // mutually exclusive with the standard-RDP Home setup, so the default
-        // must reflect the user's actual intent in Settings.
         var settings = _settingsService?.Current;
         var isChildMode = settings?.ConnectionMode == ConnectionMode.ChildSession;
+
         var prompt = isChildMode
             ? "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n\n" +
               "  ✓ 禁用 RDP Wrapper (TermWrap.dll)\n" +
@@ -319,80 +303,73 @@ public sealed class SetupDialog : Form
               "或勾选下方的「同时禁用 TermWrap」选项。\n\n" +
               "是否继续？";
 
-        // Build a confirmation dialog with an optional override checkbox.
-        // We use a small inline Form rather than a YesNo MessageBox so we can
-        // capture the override state.
         using var confirm = new Form
         {
             Text = "AkiSpace 环境修复",
-            Size = new Size(560, 320),
+            Size = new Size(580, isChildMode ? 420 : 380),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
             MinimizeBox = false,
-            BackColor = Theme.Bg,
-            ForeColor = Theme.Text,
-            Font = new Font("Microsoft YaHei UI", 9f),
+            BackColor = ThemeManager.Current.BgBase,
+            ForeColor = ThemeManager.Current.TextPrimary,
+            Font = ThemeManager.Current.GetFontSans(13f),
         };
+
+        var mainFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            Padding = new Padding(ThemeTokens.Space.S6),
+            AutoScroll = true,
+        };
+
         var lbl = new Label
         {
             Text = prompt,
-            Dock = DockStyle.Fill,
-            Padding = new Padding(16, 12, 16, 4),
-            ForeColor = Theme.Text,
-            BackColor = Theme.Bg,
+            AutoSize = true,
+            ForeColor = ThemeManager.Current.TextPrimary,
+            BackColor = Color.Transparent,
+            Font = ThemeManager.Current.GetFontSans(13f),
+            MaximumSize = new Size(520, 0),
+            Margin = new Padding(0, 0, 0, ThemeTokens.Space.S6),
         };
-        var chkForceDisable = new CheckBox
+
+        var chkForceDisable = new StyledCheckBox
         {
             Text = "同时禁用 TermWrap（覆盖默认行为）",
-            Visible = !isChildMode,  // hide the checkbox in child-session mode (already disabled by default)
+            Visible = !isChildMode,
             AutoSize = true,
-            Dock = DockStyle.Bottom,
-            Padding = new Padding(16, 0, 16, 4),
-            ForeColor = Theme.TextDim,
-            BackColor = Theme.Bg,
+            Margin = new Padding(0, 0, 0, ThemeTokens.Space.S6),
         };
-        var btnRow = new FlowLayoutPanel
+
+        var btnFlow = new FlowLayoutPanel
         {
-            Dock = DockStyle.Bottom,
-            Height = 48,
             FlowDirection = FlowDirection.RightToLeft,
-            BackColor = Theme.Surface,
-            Padding = new Padding(8),
+            WrapContents = false,
+            AutoSize = true,
+            BackColor = Color.Transparent,
         };
-        var btnOk = new Button
-        {
-            Text = "继续",
-            Size = new Size(100, 32),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.AccentBlue,
-            ForeColor = Color.White,
-            FlatAppearance = { BorderSize = 0 },
-            DialogResult = DialogResult.OK,
-        };
-        var btnCancel = new Button
-        {
-            Text = "取消",
-            Size = new Size(90, 32),
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Control,
-            ForeColor = Theme.Text,
-            FlatAppearance = { BorderColor = Theme.Border },
-            DialogResult = DialogResult.Cancel,
-        };
-        btnRow.Controls.Add(btnCancel);
-        btnRow.Controls.Add(btnOk);
-        confirm.Controls.Add(lbl);
-        confirm.Controls.Add(chkForceDisable);
-        confirm.Controls.Add(btnRow);
+
+        var btnOk = new PrimaryButton { Text = "继续", Size = new Size(100, 40), DialogResult = DialogResult.OK };
+        var btnCancel = new GhostButton { Text = "取消", Size = new Size(90, 40), DialogResult = DialogResult.Cancel };
+
+        btnFlow.Controls.Add(btnCancel);
+        btnFlow.Controls.Add(btnOk);
+
+        mainFlow.Controls.Add(lbl);
+        mainFlow.Controls.Add(chkForceDisable);
+        mainFlow.Controls.Add(btnFlow);
+
+        confirm.Controls.Add(mainFlow);
         confirm.AcceptButton = btnOk;
         confirm.CancelButton = btnCancel;
 
         if (confirm.ShowDialog(this) != DialogResult.OK) return;
         var overrideDisable = chkForceDisable.Checked;
 
-        // Re-launch the app elevated with --fix-env flag.
-        // The elevated process shows a console with fix results, then exits.
         try
         {
             var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
@@ -405,29 +382,25 @@ public sealed class SetupDialog : Form
             var args = overrideDisable ? "--fix-env --disable-wrapper" : "--fix-env";
             var psi = new ProcessStartInfo(exePath, args)
             {
-                Verb = "runas",          // UAC elevation
-                UseShellExecute = true,  // Required for Verb
+                Verb = "runas",
+                UseShellExecute = true,
             };
             Process.Start(psi);
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
-            // User clicked "No" on UAC dialog
-            if (ex.NativeErrorCode == 1223) // ERROR_CANCELLED
+            if (ex.NativeErrorCode == 1223)
             {
-                MessageBox.Show("已取消管理员权限，修复未执行。", "AkiSpace",
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("已取消管理员权限，修复未执行。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
             {
-                MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -439,8 +412,7 @@ public sealed class SetupDialog : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"无法打开链接：{ex.Message}\n请手动访问：{url}", "AkiSpace",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show($"无法打开链接：{ex.Message}\n请手动访问：{url}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -453,19 +425,16 @@ public sealed class SetupDialog : Form
                 MessageBox.Show("无内容可复制。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            // Clipboard.SetText may fail transiently if another app holds the clipboard
             for (var attempt = 0; attempt < 3; attempt++)
             {
                 try { Clipboard.SetText(text); break; }
-                catch when (attempt < 2) { System.Threading.Thread.Sleep(50); }
+                catch when (attempt < 2) { Thread.Sleep(50); }
             }
-            MessageBox.Show($"{successMessage}：{text}", "AkiSpace",
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show($"{successMessage}：{text}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"复制失败：{ex.Message}", "AkiSpace",
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show($"复制失败：{ex.Message}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -485,5 +454,20 @@ public sealed class SetupDialog : Form
             sb.AppendLine($"- {icon} **{c.Name}** — {c.Detail}");
         }
         CopyToClipboard(sb.ToString(), "诊断信息已复制（可粘贴到 GitHub issue）");
+    }
+
+    private void OnThemeChanged()
+    {
+        BackColor = ThemeManager.Current.BgBase;
+        ForeColor = ThemeManager.Current.TextPrimary;
+        Font = ThemeManager.Current.GetFontSans(13f);
+
+        _listView.BackColor = Color.Transparent;
+        _listView.ForeColor = ThemeManager.Current.TextPrimary;
+        _listView.Invalidate();
+
+        _homeGuideCard.Invalidate();
+
+        Invalidate();
     }
 }

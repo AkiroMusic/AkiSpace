@@ -1,31 +1,47 @@
-﻿using AkiSpace.Common;
+﻿using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using AkiSpace.Common;
+using AkiSpace.Controls.Styled;
 using AkiSpace.Services;
 
 namespace AkiSpace.Forms;
 
-/// <summary>Settings dialog bound to the AppSettings model.</summary>
+/// <summary>
+/// Settings dialog - Ethereal Glass design with card sections and styled controls.
+/// </summary>
 public sealed class SettingsDialog : Form
 {
     private readonly SettingsService _settingsService;
-    private readonly NumericUpDown _numWidth = new();
-    private readonly NumericUpDown _numHeight = new();
-    private readonly NumericUpDown _numColorDepth = new();
-    private readonly NumericUpDown _numPort = new();
-    private readonly ComboBox _cmbConnectionMode = new();
-    private readonly CheckBox _chkSmartSizing = new();
-    private readonly CheckBox _chkShortcutsRemote = new();
-    private readonly CheckBox _chkAudioRedirect = new();
-    private readonly CheckBox _chkAutoConnect = new();
-    private readonly CheckBox _chkLogoffOnExit = new();
-    private readonly CheckBox _chkMinimizeToTray = new();
-    private readonly CheckBox _chkShowPerformance = new();
-    private readonly CheckBox _chkEnableGlobalHotkey = new();
-    private readonly TextBox _txtCloneUsername = new();
-    private readonly TextBox _txtClonePassword = new();
-    private readonly TextBox _txtLaunchProgramPath = new();
-    private readonly Button _btnBrowseLaunchProgram = new();
-    private readonly Button _btnOk = new();
-    private readonly Button _btnCancel = new();
+
+    // Connection section
+    private readonly StyledComboBox _cmbConnectionMode = new();
+    private readonly StyledNumericUpDown _numWidth = new();
+    private readonly StyledNumericUpDown _numHeight = new();
+    private readonly StyledNumericUpDown _numColorDepth = new();
+    private readonly StyledNumericUpDown _numPort = new();
+    private readonly StyledCheckBox _chkSmartSizing = new();
+    private readonly StyledCheckBox _chkShortcutsRemote = new();
+    private readonly StyledCheckBox _chkAudioRedirect = new();
+
+    // Behavior section
+    private readonly StyledCheckBox _chkAutoConnect = new();
+    private readonly StyledCheckBox _chkLogoffOnExit = new();
+    private readonly StyledCheckBox _chkMinimizeToTray = new();
+    private readonly StyledCheckBox _chkShowPerformance = new();
+    private readonly StyledCheckBox _chkEnableGlobalHotkey = new();
+
+    // Account section
+    private readonly StyledTextBox _txtCloneUsername = new();
+    private readonly StyledTextBox _txtClonePassword = new();
+
+    // Auto-launch section
+    private readonly StyledTextBox _txtLaunchProgramPath = new();
+    private readonly GhostButton _btnBrowseLaunchProgram = new();
+
+    // Buttons
+    private readonly PrimaryButton _btnOk = new();
+    private readonly GhostButton _btnCancel = new();
 
     public SettingsDialog(SettingsService settingsService)
     {
@@ -37,66 +53,284 @@ public sealed class SettingsDialog : Form
     private void BuildUi()
     {
         Text = "设置";
-        Size = new Size(520, 620);
-        MinimumSize = new Size(520, 620);
+        Size = new Size(580, 700);
+        MinimumSize = new Size(580, 700);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        BackColor = Theme.Bg;
-        ForeColor = Theme.Text;
-        Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Regular);
+        BackColor = ThemeManager.Current.BgBase;
+        ForeColor = ThemeManager.Current.TextPrimary;
+        Font = ThemeManager.Current.GetFontSans(13f);
 
-        var grid = new TableLayoutPanel
+        var mainPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
+            Padding = new Padding(ThemeTokens.Space.S6), // 24px
+            AutoScroll = true,
+        };
+
+        var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 520,
-            ColumnCount = 2,
-            RowCount = 16,
-            Padding = new Padding(20, 16, 20, 8),
-            BackColor = Theme.Bg,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0),
         };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
+
+        // --- Connection Card ---
+        var connCard = new DoubleBezelCard
+        {
+            Title = "连接配置",
+            Subtitle = "分身桌面的连接参数与模式",
+            Width = 500,
+        };
+        BuildConnectionCard(connCard);
+        flow.Controls.Add(connCard);
+
+        // --- Behavior Card ---
+        var behaviorCard = new DoubleBezelCard
+        {
+            Title = "行为设置",
+            Subtitle = "启动、托盘、热键与性能监控",
+            Width = 500,
+        };
+        BuildBehaviorCard(behaviorCard);
+        flow.Controls.Add(behaviorCard);
+
+        // --- Account Card ---
+        var accountCard = new DoubleBezelCard
+        {
+            Title = "分身账户",
+            Subtitle = "标准 RDP 模式下的登录凭据",
+            Width = 500,
+        };
+        BuildAccountCard(accountCard);
+        flow.Controls.Add(accountCard);
+
+        // --- Auto-launch Card ---
+        var launchCard = new DoubleBezelCard
+        {
+            Title = "自动启动",
+            Subtitle = "连接成功后在分身中启动程序",
+            Width = 500,
+        };
+        BuildLaunchCard(launchCard);
+        flow.Controls.Add(launchCard);
+
+        mainPanel.Controls.Add(flow);
+        Controls.Add(mainPanel);
+
+        // Button bar (fixed at bottom)
+        var btnPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 70,
+            Padding = new Padding(ThemeTokens.Space.S6, ThemeTokens.Space.S4, ThemeTokens.Space.S6, ThemeTokens.Space.S4),
+            BackColor = Color.Transparent,
+        };
+        var btnFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+        };
+
+        _btnOk.Text = "保存";
+        _btnOk.Size = new Size(100, 40);
+        _btnOk.Click += (_, _) => { DialogResult = DialogResult.OK; Close(); };
+
+        _btnCancel.Text = "取消";
+        _btnCancel.Size = new Size(90, 40);
+        _btnCancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
+
+        btnFlow.Controls.Add(_btnCancel);
+        btnFlow.Controls.Add(_btnOk);
+        btnPanel.Controls.Add(btnFlow);
+        Controls.Add(btnPanel);
+
+        AcceptButton = _btnOk;
+        CancelButton = _btnCancel;
+
+        // Theme change handling
+        ThemeManager.Current.ThemeChanged += (_, _) => OnThemeChanged();
+    }
+
+    private void BuildConnectionCard(DoubleBezelCard card)
+    {
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 7,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        void AddRow(int row, string label, Control control)
+        void AddRow(int row, string label, Control control, string? hint = null)
         {
             var lbl = new Label
             {
                 Text = label,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Theme.Text,
-                BackColor = Theme.Bg,
+                ForeColor = ThemeManager.Current.TextPrimary,
+                BackColor = Color.Transparent,
+                Font = ThemeManager.Current.GetFontSans(13f),
+                Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
+                AutoSize = true,
             };
+            control.Margin = new Padding(0, 4, 0, 8);
+            control.Dock = DockStyle.Fill;
+            grid.Controls.Add(lbl, 0, row);
+            grid.Controls.Add(control, 1, row);
+
+            if (!string.IsNullOrEmpty(hint))
+            {
+                var hintLbl = new Label
+                {
+                    Text = hint,
+                    Dock = DockStyle.Fill,
+                    ForeColor = ThemeManager.Current.TextTertiary,
+                    BackColor = Color.Transparent,
+                    Font = ThemeManager.Current.GetFontSans(11f),
+                    AutoSize = true,
+                    Margin = new Padding(0, -4, 0, 8),
+                };
+                grid.SetColumnSpan(hintLbl, 2);
+                grid.Controls.Add(hintLbl, 0, row + 1);
+            }
+        }
+
+        _cmbConnectionMode.Items.AddRange(new object[] { "标准RDP（不同用户）", "子会话（同一用户）" });
+        _cmbConnectionMode.DropDownStyle = ComboBoxStyle.DropDownList;
+        _cmbConnectionMode.Width = 300;
+
+        _numWidth.Minimum = 800; _numWidth.Maximum = 7680; _numWidth.Increment = 160; _numWidth.Width = 150;
+        _numHeight.Minimum = 600; _numHeight.Maximum = 4320; _numHeight.Increment = 120; _numHeight.Width = 150;
+        _numColorDepth.Minimum = 8; _numColorDepth.Maximum = 32; _numColorDepth.Increment = 8; _numColorDepth.Width = 100;
+        _numPort.Minimum = 1; _numPort.Maximum = 65535; _numPort.Width = 150;
+
+        _chkSmartSizing.Text = "缩放适应窗口 (Smart Sizing)";
+        _chkShortcutsRemote.Text = "系统快捷键发送到分身";
+        _chkAudioRedirect.Text = "音频重定向到本机";
+
+        AddRow(0, "连接模式", _cmbConnectionMode);
+        AddRow(1, "分身桌面宽度", _numWidth, "像素，建议匹配显示器分辨率");
+        AddRow(2, "分身桌面高度", _numHeight, "像素，建议匹配显示器分辨率");
+        AddRow(3, "颜色深度", _numColorDepth, "位，32位为真彩色");
+        AddRow(4, "RDP 端口", _numPort, "默认 3389，修改后需重启 TermService");
+        AddRow(5, "", _chkSmartSizing);
+        AddRow(6, "", _chkShortcutsRemote);
+        // Add audio redirect in next row
+        var row7 = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Height = 36 };
+        _chkAudioRedirect.Dock = DockStyle.Fill;
+        row7.Controls.Add(_chkAudioRedirect);
+        grid.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill, BackColor = Color.Transparent }, 0, 7);
+        grid.Controls.Add(row7, 1, 7);
+
+        card.ContentControls.Add(grid);
+    }
+
+    private void BuildBehaviorCard(DoubleBezelCard card)
+    {
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 5,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
+        };
+
+        _chkAutoConnect.Text = "启动时自动连接分身";
+        _chkLogoffOnExit.Text = "退出时终止子会话";
+        _chkMinimizeToTray.Text = "最小化到系统托盘";
+        _chkShowPerformance.Text = "状态栏显示性能监控 (CPU/内存)";
+        _chkEnableGlobalHotkey.Text = "启用全局热键 (Ctrl+Shift+D 切换连接, Ctrl+Alt+Space 显示窗口)";
+
+        var checks = new[] { _chkAutoConnect, _chkLogoffOnExit, _chkMinimizeToTray, _chkShowPerformance, _chkEnableGlobalHotkey };
+        for (int i = 0; i < checks.Length; i++)
+        {
+            checks[i].Dock = DockStyle.Top;
+            checks[i].Margin = new Padding(0, 0, 0, 8);
+            checks[i].Font = ThemeManager.Current.GetFontSans(13f);
+            grid.Controls.Add(checks[i], 0, i);
+        }
+
+        card.ContentControls.Add(grid);
+    }
+
+    private void BuildAccountCard(DoubleBezelCard card)
+    {
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        _txtCloneUsername.Width = 300;
+        _txtClonePassword.Width = 300;
+        _txtClonePassword.UseSystemPasswordChar = true;
+
+        void AddRow(int row, string label, Control control, string? hint = null)
+        {
+            var lbl = new Label
+            {
+                Text = label,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = ThemeManager.Current.TextPrimary,
+                BackColor = Color.Transparent,
+                Font = ThemeManager.Current.GetFontSans(13f),
+                Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
+                AutoSize = true,
+            };
+            control.Margin = new Padding(0, 4, 0, 8);
+            control.Dock = DockStyle.Fill;
             grid.Controls.Add(lbl, 0, row);
             grid.Controls.Add(control, 1, row);
         }
 
-        // Style controls
-        StyleControl(_numWidth);
-        StyleControl(_numHeight);
-        StyleControl(_numColorDepth);
-        StyleControl(_numPort);
-        StyleComboBox(_cmbConnectionMode);
-        StyleCheckbox(_chkSmartSizing);
-        StyleCheckbox(_chkShortcutsRemote);
-        StyleCheckbox(_chkAudioRedirect);
-        StyleCheckbox(_chkAutoConnect);
-        StyleCheckbox(_chkLogoffOnExit);
-        StyleCheckbox(_chkMinimizeToTray);
-        StyleCheckbox(_chkShowPerformance);
-        StyleCheckbox(_chkEnableGlobalHotkey);
-        StyleTextBox(_txtCloneUsername);
-        StyleTextBox(_txtClonePassword);
-        StyleTextBox(_txtLaunchProgramPath);
+        AddRow(0, "分身账户用户名", _txtCloneUsername, "标准 RDP 模式必填，如 AkiSpaceUser");
+        AddRow(1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储，默认 lb33 为占位符");
+
+        card.ContentControls.Add(grid);
+    }
+
+    private void BuildLaunchCard(DoubleBezelCard card)
+    {
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
+        };
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+
+        _txtLaunchProgramPath.Dock = DockStyle.Fill;
+        _txtLaunchProgramPath.Width = 350;
+
         _btnBrowseLaunchProgram.Text = "浏览...";
-        _btnBrowseLaunchProgram.Size = new Size(60, 24);
-        _btnBrowseLaunchProgram.FlatStyle = FlatStyle.Flat;
-        _btnBrowseLaunchProgram.BackColor = Theme.Control;
-        _btnBrowseLaunchProgram.ForeColor = Theme.Text;
-        _btnBrowseLaunchProgram.FlatAppearance.BorderColor = Theme.Border;
-        _btnBrowseLaunchProgram.Cursor = Cursors.Hand;
+        _btnBrowseLaunchProgram.Size = new Size(90, 40);
         _btnBrowseLaunchProgram.Click += (_, _) =>
         {
             using var ofd = new OpenFileDialog
@@ -108,101 +342,27 @@ public sealed class SettingsDialog : Form
                 _txtLaunchProgramPath.Text = ofd.FileName;
         };
 
-        var launchProgramRow = new TableLayoutPanel
+        var rowPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Height = 44 };
+        var rowFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.Transparent };
+        rowFlow.Controls.Add(_txtLaunchProgramPath);
+        rowFlow.Controls.Add(_btnBrowseLaunchProgram);
+        rowPanel.Controls.Add(rowFlow);
+
+        var lbl = new Label
         {
+            Text = "连接后自动启动",
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            BackColor = Theme.Bg,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = ThemeManager.Current.TextPrimary,
+            BackColor = Color.Transparent,
+            Font = ThemeManager.Current.GetFontSans(13f),
+            Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
+            AutoSize = true,
         };
-        launchProgramRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        launchProgramRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
-        launchProgramRow.Controls.Add(_txtLaunchProgramPath, 0, 0);
-        launchProgramRow.Controls.Add(_btnBrowseLaunchProgram, 1, 0);
+        grid.Controls.Add(lbl, 0, 0);
+        grid.Controls.Add(rowPanel, 1, 0);
 
-        _numWidth.Minimum = 800; _numWidth.Maximum = 7680; _numWidth.Increment = 160;
-        _numHeight.Minimum = 600; _numHeight.Maximum = 4320; _numHeight.Increment = 120;
-        _numColorDepth.Minimum = 8; _numColorDepth.Maximum = 32; _numColorDepth.Increment = 8;
-        _numPort.Minimum = 1; _numPort.Maximum = 65535;
-
-        _cmbConnectionMode.Items.AddRange(new object[] { "标准RDP（不同用户）", "子会话（同一用户）" });
-        _cmbConnectionMode.DropDownStyle = ComboBoxStyle.DropDownList;
-
-        AddRow(0, "连接模式", _cmbConnectionMode);
-        AddRow(1, "分身桌面宽度", _numWidth);
-        AddRow(2, "分身桌面高度", _numHeight);
-        AddRow(3, "颜色深度 (位)", _numColorDepth);
-        AddRow(4, "RDP 端口", _numPort);
-        AddRow(5, "缩放适应窗口", _chkSmartSizing);
-        AddRow(6, "快捷键发送到分身", _chkShortcutsRemote);
-        AddRow(7, "音频重定向", _chkAudioRedirect);
-        AddRow(8, "启动时自动连接", _chkAutoConnect);
-        AddRow(9, "退出时终止子会话", _chkLogoffOnExit);
-        AddRow(10, "最小化到托盘", _chkMinimizeToTray);
-        AddRow(11, "显示性能监控", _chkShowPerformance);
-        AddRow(12, "全局热键 Ctrl+Shift+D", _chkEnableGlobalHotkey);
-        AddRow(13, "分身账户用户名", _txtCloneUsername);
-        AddRow(14, "分身账户密码", _txtClonePassword);
-        AddRow(15, "连接后自动启动", launchProgramRow);
-
-        _txtClonePassword.UseSystemPasswordChar = true;
-
-        var btnRow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 60,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = false,
-            Padding = new Padding(8),
-            BackColor = Theme.Surface,
-        };
-        _btnOk.Text = "保存";
-        _btnOk.Size = new Size(100, 36);
-        _btnOk.FlatStyle = FlatStyle.Flat;
-        _btnOk.BackColor = Theme.AccentBlue;
-        _btnOk.ForeColor = Color.White;
-        _btnOk.FlatAppearance.BorderSize = 0;
-        _btnOk.DialogResult = DialogResult.OK;
-        _btnCancel.Text = "取消";
-        _btnCancel.Size = new Size(90, 36);
-        _btnCancel.FlatStyle = FlatStyle.Flat;
-        _btnCancel.BackColor = Theme.Control;
-        _btnCancel.ForeColor = Theme.Text;
-        _btnCancel.FlatAppearance.BorderColor = Theme.Border;
-        _btnCancel.DialogResult = DialogResult.Cancel;
-        btnRow.Controls.Add(_btnCancel);
-        btnRow.Controls.Add(_btnOk);
-
-        Controls.Add(grid);
-        Controls.Add(btnRow);
-        AcceptButton = _btnOk;
-        CancelButton = _btnCancel;
-    }
-
-    private static void StyleControl(NumericUpDown ctrl)
-    {
-        ctrl.BackColor = Theme.Control;
-        ctrl.ForeColor = Theme.Text;
-        ctrl.BorderStyle = BorderStyle.FixedSingle;
-    }
-
-    private static void StyleCheckbox(CheckBox ctrl)
-    {
-        ctrl.BackColor = Theme.Bg;
-        ctrl.ForeColor = Theme.Text;
-    }
-
-    private static void StyleTextBox(TextBox ctrl)
-    {
-        ctrl.BackColor = Theme.Control;
-        ctrl.ForeColor = Theme.Text;
-        ctrl.BorderStyle = BorderStyle.FixedSingle;
-    }
-
-    private static void StyleComboBox(ComboBox ctrl)
-    {
-        ctrl.BackColor = Theme.Control;
-        ctrl.ForeColor = Theme.Text;
-        ctrl.FlatStyle = FlatStyle.Flat;
+        card.ContentControls.Add(grid);
     }
 
     private void LoadSettings()
@@ -255,5 +415,36 @@ public sealed class SettingsDialog : Form
             });
         }
         base.OnFormClosing(e);
+    }
+
+    private void OnThemeChanged()
+    {
+        BackColor = ThemeManager.Current.BgBase;
+        ForeColor = ThemeManager.Current.TextPrimary;
+        Font = ThemeManager.Current.GetFontSans(13f);
+
+        foreach (var ctrl in GetAllControls(this))
+        {
+            if (ctrl is Label lbl)
+            {
+                lbl.ForeColor = ThemeManager.Current.TextPrimary;
+                lbl.Font = ThemeManager.Current.GetFontSans(lbl.Font.Size);
+            }
+        }
+
+        Invalidate();
+    }
+
+    private static IEnumerable<Control> GetAllControls(Control root)
+    {
+        var stack = new Stack<Control>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var c = stack.Pop();
+            yield return c;
+            foreach (Control child in c.Controls)
+                stack.Push(child);
+        }
     }
 }

@@ -58,8 +58,11 @@ public sealed class AppSettings
     /// <summary>Show CPU/memory usage in status bar.</summary>
     public bool ShowPerformance { get; set; } = true;
 
-    /// <summary>Global hotkey to toggle connect/disconnect (Ctrl+Shift+D).</summary>
+/// <summary>Global hotkey to toggle connect/disconnect (Ctrl+Shift+D).</summary>
     public bool EnableGlobalHotkey { get; set; } = true;
+
+    /// <summary>Current theme (dark, light, sepia, forest, ocean, lavender).</summary>
+    public string Theme { get; set; } = "dark";
 }
 
 /// <summary>Connection mode for the desktop clone.</summary>

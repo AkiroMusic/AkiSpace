@@ -354,4 +354,49 @@ public static partial class User32
         uint cbAttribute);
 
     public const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+    // ---- Window Composition (Blur Behind) ----
+
+    public enum ACCENT_STATE
+    {
+        ACCENT_DISABLED = 0,
+        ACCENT_ENABLE_GRADIENT = 1,
+        ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+        ACCENT_ENABLE_BLURBEHIND = 3,
+        ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+        ACCENT_INVALID_STATE = 5
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ACCENT_POLICY
+    {
+        public ACCENT_STATE AccentState;
+        public uint AccentFlags;
+        public uint GradientColor;
+        public uint AnimationId;
+    }
+
+    public enum WINDOWCOMPOSITIONATTRIB
+    {
+        WCA_ACCENT_POLICY = 19
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWCOMPOSITIONATTRIBDATA
+    {
+        public WINDOWCOMPOSITIONATTRIB Attribute;
+        public IntPtr Data;
+        public int SizeOfData;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowCompositionAttribute(IntPtr hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
+
+    // ---- Window Message Constants ----
+
+    public const uint WM_NCLBUTTONDOWN = 0x00A1;
+    public const uint HTCAPTION = 0x0002;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 }
