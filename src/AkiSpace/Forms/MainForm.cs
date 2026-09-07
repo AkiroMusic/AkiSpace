@@ -443,6 +443,14 @@ public sealed class MainForm : Form
 
             var settings = _settingsService.Current;
 
+            // Surface the placeholder default password so the user changes it
+            // before connecting to a real account. The SelfTest intentionally
+            // still uses "lb33" — those warnings are expected.
+            if (settings.ClonePassword == "lb33")
+            {
+                _logger.LogWarning("ClonePassword is the built-in default 'lb33' — change it in Settings before connecting to a real account");
+            }
+
             // IMPORTANT: for child-session mode, RDP 3389 TCP listening is NOT
             // required — the ConnectToChildSession path connects via the local
             // session broker, not over TCP. After disabling RDP Wrapper, the
@@ -723,6 +731,35 @@ public sealed class MainForm : Form
 
         // Focus the RDP input window so keyboard goes to the child session
         BeginInvoke(() => _rdpHost?.TryFocusRdpInputWindow());
+
+        // Auto-launch the configured program in the cloned session, if any.
+        // Done in a background thread so OnRdpLoginComplete returns quickly.
+        var launchPath = _settingsService.Current.LaunchProgramPath;
+        if (!string.IsNullOrWhiteSpace(launchPath))
+        {
+            var sid = _sessionManager.TryGetChildSessionId();
+            if (sid.HasValue)
+            {
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        if (_processLauncher.LaunchInChildSession(launchPath, sid.Value))
+                            _logger.LogInformation("Auto-launched {Exe} in child session {Sid}", launchPath, sid.Value);
+                        else
+                            _logger.LogWarning("Auto-launch failed for {Exe} in child session {Sid}", launchPath, sid.Value);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Auto-launch threw for {Exe}", launchPath);
+                    }
+                });
+            }
+            else
+            {
+                _logger.LogInformation("Auto-launch skipped: no child session id available");
+            }
+        }
     }
 
     private void OnRdpConnectionFailed(string reason)

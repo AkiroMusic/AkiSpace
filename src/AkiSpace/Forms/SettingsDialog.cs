@@ -22,6 +22,8 @@ public sealed class SettingsDialog : Form
     private readonly CheckBox _chkEnableGlobalHotkey = new();
     private readonly TextBox _txtCloneUsername = new();
     private readonly TextBox _txtClonePassword = new();
+    private readonly TextBox _txtLaunchProgramPath = new();
+    private readonly Button _btnBrowseLaunchProgram = new();
     private readonly Button _btnOk = new();
     private readonly Button _btnCancel = new();
 
@@ -50,7 +52,7 @@ public sealed class SettingsDialog : Form
             Dock = DockStyle.Top,
             Height = 520,
             ColumnCount = 2,
-            RowCount = 15,
+            RowCount = 16,
             Padding = new Padding(20, 16, 20, 8),
             BackColor = Theme.Bg,
         };
@@ -87,6 +89,35 @@ public sealed class SettingsDialog : Form
         StyleCheckbox(_chkEnableGlobalHotkey);
         StyleTextBox(_txtCloneUsername);
         StyleTextBox(_txtClonePassword);
+        StyleTextBox(_txtLaunchProgramPath);
+        _btnBrowseLaunchProgram.Text = "浏览...";
+        _btnBrowseLaunchProgram.Size = new Size(60, 24);
+        _btnBrowseLaunchProgram.FlatStyle = FlatStyle.Flat;
+        _btnBrowseLaunchProgram.BackColor = Theme.Control;
+        _btnBrowseLaunchProgram.ForeColor = Theme.Text;
+        _btnBrowseLaunchProgram.FlatAppearance.BorderColor = Theme.Border;
+        _btnBrowseLaunchProgram.Cursor = Cursors.Hand;
+        _btnBrowseLaunchProgram.Click += (_, _) =>
+        {
+            using var ofd = new OpenFileDialog
+            {
+                Title = "选择连接后自动启动的程序",
+                Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+            };
+            if (ofd.ShowDialog(this) == DialogResult.OK)
+                _txtLaunchProgramPath.Text = ofd.FileName;
+        };
+
+        var launchProgramRow = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            BackColor = Theme.Bg,
+        };
+        launchProgramRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        launchProgramRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
+        launchProgramRow.Controls.Add(_txtLaunchProgramPath, 0, 0);
+        launchProgramRow.Controls.Add(_btnBrowseLaunchProgram, 1, 0);
 
         _numWidth.Minimum = 800; _numWidth.Maximum = 7680; _numWidth.Increment = 160;
         _numHeight.Minimum = 600; _numHeight.Maximum = 4320; _numHeight.Increment = 120;
@@ -111,6 +142,7 @@ public sealed class SettingsDialog : Form
         AddRow(12, "全局热键 Ctrl+Shift+D", _chkEnableGlobalHotkey);
         AddRow(13, "分身账户用户名", _txtCloneUsername);
         AddRow(14, "分身账户密码", _txtClonePassword);
+        AddRow(15, "连接后自动启动", launchProgramRow);
 
         _txtClonePassword.UseSystemPasswordChar = true;
 
@@ -191,6 +223,7 @@ public sealed class SettingsDialog : Form
         _chkEnableGlobalHotkey.Checked = s.EnableGlobalHotkey;
         _txtCloneUsername.Text = s.CloneUsername;
         _txtClonePassword.Text = s.ClonePassword;
+        _txtLaunchProgramPath.Text = s.LaunchProgramPath ?? string.Empty;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -216,6 +249,9 @@ public sealed class SettingsDialog : Form
                 s.EnableGlobalHotkey = _chkEnableGlobalHotkey.Checked;
                 s.CloneUsername = _txtCloneUsername.Text;
                 s.ClonePassword = _txtClonePassword.Text;
+                s.LaunchProgramPath = string.IsNullOrWhiteSpace(_txtLaunchProgramPath.Text)
+                    ? null
+                    : _txtLaunchProgramPath.Text;
             });
         }
         base.OnFormClosing(e);

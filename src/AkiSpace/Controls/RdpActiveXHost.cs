@@ -302,8 +302,11 @@ public sealed class RdpActiveXHost : AxHost
                 var adv9 = GetComProperty(client, "AdvancedSettings9");
                 if (adv9 != null)
                 {
-                    // 0 = connect without any certificate warning
-                    SetComProperty(adv9, "AuthenticationLevel", 0);
+                    // 2 = AttemptAuthentication: log/warn on localhost cert
+                    // mismatch instead of silently skipping (level 0) which
+                    // left the user open to NLA credential theft if a
+                    // malicious listener bound 3389 first.
+                    SetComProperty(adv9, "AuthenticationLevel", 2);
                     SetComProperty(adv9, "RedirectClipboard", false);
                     SetComProperty(adv9, "RedirectDrives", false);
                     SetComProperty(adv9, "RedirectDevices", false);
@@ -328,7 +331,9 @@ public sealed class RdpActiveXHost : AxHost
                 if (!string.IsNullOrEmpty(userName))
                 {
                     SetComProperty(client, "UserName", userName);
-                    _logger.LogInformation("Set UserName={User}", userName);
+                    // Log at Debug (not Info) — userName can be a personal
+                    // identifier and Info is enabled by default.
+                    _logger.LogDebug("Set UserName (length={Length})", userName.Length);
                 }
                 if (!string.IsNullOrEmpty(password))
                 {

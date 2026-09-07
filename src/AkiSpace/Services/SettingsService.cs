@@ -130,7 +130,17 @@ public sealed class SettingsService
         try
         {
             var json = File.ReadAllText(_filePath);
-            return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+
+            // Migrate any plaintext password found on disk (older format) so the
+            // very next Save upgrades it to DPAPI-protected at rest.
+            if (!string.IsNullOrEmpty(loaded.ClonePassword)
+                && !loaded.ClonePassword.StartsWith(SettingsProtection.Prefix, StringComparison.Ordinal))
+            {
+                _logger.LogInformation("Upgrading settings.json ClonePassword to DPAPI protection");
+            }
+            loaded.ClonePassword = SettingsProtection.Unprotect(loaded.ClonePassword);
+            return loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -141,6 +151,14 @@ public sealed class SettingsService
 
     private void SaveCore(AppSettings settings)
     {
+        // Encrypt the clone password before writing; SaveCore is always called
+        // with a fresh clone so mutating the input here is safe.
+        if (!string.IsNullOrEmpty(settings.ClonePassword)
+            && !settings.ClonePassword.StartsWith(SettingsProtection.Prefix, StringComparison.Ordinal))
+        {
+            settings.ClonePassword = SettingsProtection.Protect(settings.ClonePassword);
+        }
+
         var tmpPath = _filePath + ".tmp";
         var json = JsonSerializer.Serialize(settings, JsonOptions);
         File.WriteAllText(tmpPath, json);

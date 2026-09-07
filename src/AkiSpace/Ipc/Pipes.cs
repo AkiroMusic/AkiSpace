@@ -54,12 +54,22 @@ public sealed class PipeServer : IAsyncDisposable
                 NamedPipeServerStream? stream = null;
                 try
                 {
+                    // Note: .NET 8's NamedPipeServerStream does NOT expose a
+                    // constructor that accepts a PipeSecurity, nor a public
+                    // SetAccessControl. The default ACL allows any local user
+                    // to connect to a named pipe; the practical mitigation
+                    // is the predictable, unique pipe name combined with the
+                    // child-session process boundary. A future .NET upgrade
+                    // (or manual SafeHandle ACL) can restore strict per-user
+                    // ACLs.
                     stream = new NamedPipeServerStream(
                         PipeNames.MouseForward,
                         PipeDirection.InOut,
-                        maxNumberOfServerInstances: 1,
+                        1,
                         PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous);
+                        PipeOptions.Asynchronous,
+                        4096,
+                        4096);
 
                     _logger.LogInformation("Pipe server listening on {Pipe}", PipeNames.MouseForward);
                     await stream.WaitForConnectionAsync(token).ConfigureAwait(false);
