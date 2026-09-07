@@ -1,13 +1,17 @@
+using System.Diagnostics;
 using AkiSpace.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AkiSpace.Forms;
 
 /// <summary>
-/// One-click environment check & fix dialog for the desktop-clone prerequisites:
+/// One-click environment check &amp; fix dialog for the desktop-clone prerequisites:
 /// RDP enabled, multi-session, RDP Wrapper (Home), StartRCM, TermService,
 /// firewall loopback rule, child sessions, listener, termsrv version.
-/// </summary>
+///
+/// Home edition users get an additional guided install panel for RDP Wrapper
+/// (sergiye/rdpWrapper or sebaxakerhtc/rdpwrap), which must be installed manually
+/// because it patches / hooks TermService's termsrv.dll.
 public sealed class SetupDialog : Form
 {
     // Dark theme colors
@@ -20,6 +24,11 @@ public sealed class SetupDialog : Form
     private static readonly Color AccentBlue = Color.FromArgb(0, 120, 215);
     private static readonly Color AccentGreen = Color.FromArgb(0, 180, 80);
     private static readonly Color AccentRed = Color.FromArgb(220, 50, 50);
+    private static readonly Color AccentAmber = Color.FromArgb(200, 150, 30);
+
+    // Known RDP Wrapper source repos
+    private const string SergiyeReleasesUrl = "https://github.com/sergiye/rdpWrapper/releases";
+    private const string SebaxakerhtcRepoUrl = "https://github.com/sebaxakerhtc/rdpwrap";
 
     private readonly ILogger<SetupDialog> _logger;
     private readonly EnvironmentVerifier _verifier;
@@ -30,6 +39,17 @@ public sealed class SetupDialog : Form
     private readonly Button _btnFix = new();
     private readonly Button _btnClose = new();
     private readonly Label _lblHint = new();
+
+    // ---- Home RDP Wrapper install guide panel ----
+    private readonly Panel _panelHomeGuide = new();
+    private readonly Label _lblHomeTitle = new();
+    private readonly Label _lblHomeBody = new();
+    private readonly Label _lblTermsrvVersion = new();
+    private readonly Button _btnOpenSergiye = new();
+    private readonly Button _btnOpenSebaxakerhtc = new();
+    private readonly Button _btnCopyVersion = new();
+    private readonly Button _btnCopyDiagnostics = new();
+    private readonly Button _btnRecheckAfterInstall = new();
 
     public SetupDialog(
         ILogger<SetupDialog> logger,
@@ -47,8 +67,8 @@ public sealed class SetupDialog : Form
     private void BuildUi()
     {
         Text = "环境检查 / 修复 — 桌面分身前置条件";
-        Size = new Size(720, 560);
-        MinimumSize = new Size(640, 400);
+        Size = new Size(760, 640);
+        MinimumSize = new Size(640, 480);
         StartPosition = FormStartPosition.CenterParent;
         BackColor = DarkBg;
         ForeColor = DarkText;
@@ -63,7 +83,10 @@ public sealed class SetupDialog : Form
         _listView.BorderStyle = BorderStyle.None;
         _listView.Columns.Add("检查项", 260);
         _listView.Columns.Add("状态", 90);
-        _listView.Columns.Add("详情", 340);
+        _listView.Columns.Add("详情", 360);
+
+        // ---- Home RDP Wrapper guide panel (auto-shows on failure) ----
+        BuildHomeGuidePanel();
 
         var bottom = new Panel
         {
@@ -115,14 +138,109 @@ public sealed class SetupDialog : Form
         bottom.Controls.Add(_lblHint);
         bottom.Controls.Add(btnRow);
 
-        Controls.Add(_listView);
-        Controls.Add(bottom);
+        // Dock order matters: last-added docks fill remaining space.
+        // We want: top = home guide (when shown), fill = list, bottom = bottom.
+        // Using Top dock for the guide means we need to add it BEFORE the list (Fill).
+        Controls.Add(_panelHomeGuide);   // DockStyle.Top, added second-to-last
+        Controls.Add(_listView);          // DockStyle.Fill, fills remaining
+        Controls.Add(bottom);             // DockStyle.Bottom
+    }
+
+    private void BuildHomeGuidePanel()
+    {
+        _panelHomeGuide.Dock = DockStyle.Top;
+        _panelHomeGuide.Visible = false;
+        _panelHomeGuide.BackColor = Color.FromArgb(45, 35, 20);  // amber-tinted dark
+        _panelHomeGuide.BorderStyle = BorderStyle.FixedSingle;
+        _panelHomeGuide.Padding = new Padding(14, 12, 14, 12);
+        _panelHomeGuide.AutoSize = true;
+        _panelHomeGuide.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+
+        // Title row
+        _lblHomeTitle.Text = "⚠ 家庭版需要安装 RDP Wrapper";
+        _lblHomeTitle.Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold);
+        _lblHomeTitle.ForeColor = AccentAmber;
+        _lblHomeTitle.AutoSize = true;
+        _lblHomeTitle.Location = new Point(0, 0);
+
+        // Body text with the actual version number
+        _lblHomeBody.Text =
+            "Windows 家庭版不提供 RDP 主机，桌面分身功能需要 RDP Wrapper 第三方解锁层。\n" +
+            "安装步骤：① 下载任一社区维护的 RDP Wrapper → ② 解压到 C:\\Program Files\\RDP Wrapper\\ →\n" +
+            "③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。\n" +
+            "AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。";
+        _lblHomeBody.Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
+        _lblHomeBody.ForeColor = DarkText;
+        _lblHomeBody.Location = new Point(0, 28);
+        _lblHomeBody.AutoSize = true;
+        _lblHomeBody.MaximumSize = new Size(720, 0);
+
+        // Version row (highlighted)
+        var termsrvVer = _sessionManager.GetTermsrvVersion();
+        _lblTermsrvVersion.Text = $"本机 termsrv.dll 版本:  {termsrvVer}    （在 rdpwrap.ini 中需找到 [10.0.{termsrvVer.Split('.')[2]}.xxxx] 段落）";
+        _lblTermsrvVersion.Font = new Font("Consolas", 9.5f, FontStyle.Bold);
+        _lblTermsrvVersion.ForeColor = AccentBlue;
+        _lblTermsrvVersion.Location = new Point(0, 100);
+        _lblTermsrvVersion.AutoSize = true;
+
+        // Button row
+        int y = 130;
+        StyleGuideButton(_btnOpenSergiye, "① 打开 sergiye/rdpWrapper (C# 推荐)", 290, 32);
+        _btnOpenSergiye.Location = new Point(0, y);
+        _btnOpenSergiye.Click += (_, _) => OpenUrl(SergiyeReleasesUrl);
+
+        StyleGuideButton(_btnOpenSebaxakerhtc, "② 打开 sebaxakerhtc/rdpwrap (Delphi fork)", 290, 32);
+        _btnOpenSebaxakerhtc.Location = new Point(300, y);
+        _btnOpenSebaxakerhtc.Click += (_, _) => OpenUrl(SebaxakerhtcRepoUrl);
+
+        y += 40;
+        StyleGuideButton(_btnCopyVersion, "③ 复制版本号（用于搜索 rdpwrap.ini）", 290, 32);
+        _btnCopyVersion.Location = new Point(0, y);
+        _btnCopyVersion.Click += (_, _) => CopyToClipboard(termsrvVer, "已复制 termsrv.dll 版本号");
+
+        StyleGuideButton(_btnCopyDiagnostics, "④ 复制诊断信息（用于 GitHub 反馈）", 290, 32);
+        _btnCopyDiagnostics.Location = new Point(300, y);
+        _btnCopyDiagnostics.Click += (_, _) => CopyDiagnosticsToClipboard();
+
+        y += 40;
+        StyleGuideButton(_btnRecheckAfterInstall, "我已安装 RDP Wrapper → 重新检查", 290, 32);
+        _btnRecheckAfterInstall.Location = new Point(0, y);
+        _btnRecheckAfterInstall.BackColor = AccentGreen;
+        _btnRecheckAfterInstall.ForeColor = Color.White;
+        _btnRecheckAfterInstall.FlatAppearance.BorderSize = 0;
+        _btnRecheckAfterInstall.Click += (_, _) => RunChecks();
+
+        // Resize panel to fit content
+        _panelHomeGuide.Controls.Add(_lblHomeTitle);
+        _panelHomeGuide.Controls.Add(_lblHomeBody);
+        _panelHomeGuide.Controls.Add(_lblTermsrvVersion);
+        _panelHomeGuide.Controls.Add(_btnOpenSergiye);
+        _panelHomeGuide.Controls.Add(_btnOpenSebaxakerhtc);
+        _panelHomeGuide.Controls.Add(_btnCopyVersion);
+        _panelHomeGuide.Controls.Add(_btnCopyDiagnostics);
+        _panelHomeGuide.Controls.Add(_btnRecheckAfterInstall);
+    }
+
+    private static void StyleGuideButton(Button btn, string text, int width, int height)
+    {
+        btn.Text = text;
+        btn.Size = new Size(width, height);
+        btn.FlatStyle = FlatStyle.Flat;
+        btn.BackColor = Color.FromArgb(60, 60, 60);
+        btn.ForeColor = Color.FromArgb(220, 220, 220);
+        btn.FlatAppearance.BorderColor = Color.FromArgb(90, 90, 90);
+        btn.Cursor = Cursors.Hand;
     }
 
     private void RunChecks()
     {
         _listView.BeginUpdate();
         _listView.Items.Clear();
+        // Track the *install-detection* check (CheckRdpWrapper, named "多会话解锁 ..."),
+        // NOT the CheckRdpWrapperHook check (named "RDP Wrapper (TermWrap.dll) hook")
+        // which has a different meaning (it checks whether the hook is currently
+        // ACTIVE in the running TermService, not whether the wrapper is installed).
+        EnvCheckResult? wrapperInstallCheck = null;
         foreach (var check in _verifier.RunAllChecks())
         {
             var item = new ListViewItem(check.Name);
@@ -130,9 +248,18 @@ public sealed class SetupDialog : Form
             item.SubItems.Add(check.Detail);
             item.ForeColor = check.Pass ? AccentGreen : AccentRed;
             _listView.Items.Add(item);
+            if (check.Name.StartsWith("多会话解锁"))
+                wrapperInstallCheck = check;
         }
         _listView.EndUpdate();
         _logger.LogInformation("Environment checks completed");
+
+        // Show the Home install guide only when the wrapper install check fails
+        // (i.e. no TermWrap.dll/rdpwrap.dll hook present in TermService\Parameters).
+        // Pro/Enterprise users have native RDP and won't trigger this.
+        var showHomeGuide = wrapperInstallCheck is { Pass: false };
+        _panelHomeGuide.Visible = showHomeGuide;
+        _logger.LogInformation("Home install guide visible: {Show}", showHomeGuide);
     }
 
     private void RunFixes()
@@ -146,7 +273,7 @@ public sealed class SetupDialog : Form
             "  5. 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
             "  6. 重启 TermService 服务\n" +
             "  7. 启用子会话\n\n" +
-            "注意：RDP Wrapper 本身（rdpwrap.dll）不会自动安装，请按 README 手动完成。\n\n" +
+            "注意：RDP Wrapper 本身（rdpwrap.dll）不会自动安装，请按本对话框顶部的指引完成。\n\n" +
             "是否继续？",
             "AkiSpace 环境修复", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         if (confirm != DialogResult.Yes) return;
@@ -155,19 +282,19 @@ public sealed class SetupDialog : Form
         // The elevated process shows a console with fix results, then exits.
         try
         {
-            var exePath = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
             if (exePath == null)
             {
                 MessageBox.Show("无法获取程序路径。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
-            var psi = new System.Diagnostics.ProcessStartInfo(exePath, "--fix-env")
+            var psi = new ProcessStartInfo(exePath, "--fix-env")
             {
                 Verb = "runas",          // UAC elevation
                 UseShellExecute = true,  // Required for Verb
             };
-            System.Diagnostics.Process.Start(psi);
+            Process.Start(psi);
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
@@ -188,5 +315,61 @@ public sealed class SetupDialog : Form
             MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private static void OpenUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"无法打开链接：{ex.Message}\n请手动访问：{url}", "AkiSpace",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private static void CopyToClipboard(string text, string successMessage)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                MessageBox.Show("无内容可复制。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            // Clipboard.SetText may fail transiently if another app holds the clipboard
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                try { Clipboard.SetText(text); break; }
+                catch when (attempt < 2) { System.Threading.Thread.Sleep(50); }
+            }
+            MessageBox.Show($"{successMessage}：{text}", "AkiSpace",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"复制失败：{ex.Message}", "AkiSpace",
+                MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void CopyDiagnosticsToClipboard()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("## AkiSpace 诊断信息");
+        sb.AppendLine();
+        sb.AppendLine($"- 时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"- 系统：{Environment.OSVersion}");
+        sb.AppendLine($"- 进程：{(Environment.Is64BitProcess ? "x64" : "x86")} {(Environment.Is64BitOperatingSystem ? "64-bit OS" : "32-bit OS")}");
+        sb.AppendLine();
+        sb.AppendLine("### 环境检查结果");
+        foreach (var c in _verifier.RunAllChecks())
+        {
+            var icon = c.Pass ? "✓" : "✗";
+            sb.AppendLine($"- {icon} **{c.Name}** — {c.Detail}");
+        }
+        CopyToClipboard(sb.ToString(), "诊断信息已复制（可粘贴到 GitHub issue）");
     }
 }
