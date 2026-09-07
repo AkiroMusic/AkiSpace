@@ -23,9 +23,9 @@ public static class PipeNames
 public sealed class PipeServer : IAsyncDisposable
 {
     private readonly ILogger<PipeServer> _logger;
-    private readonly CancellationTokenSource _cts = new();
+    private readonly object _lifecycleGate = new();
+    private CancellationTokenSource? _cts;
     private Task? _listenTask;
-    private bool _started;
 
     public PipeServer(ILogger<PipeServer> logger)
     {
@@ -38,15 +38,23 @@ public sealed class PipeServer : IAsyncDisposable
     /// <summary>Starts listening for a single child-session connection.</summary>
     public void Start()
     {
-        if (_started) return;
-        _started = true;
+        lock (_lifecycleGate)
+        {
+            if (_cts != null) return;  // already started
+            _cts = new CancellationTokenSource();
+        }
         _listenTask = Task.Run(async () =>
         {
-            while (!_cts.IsCancellationRequested)
+            while (true)
             {
+                CancellationToken token;
+                lock (_lifecycleGate) { token = _cts?.Token ?? default; }
+                if (token.IsCancellationRequested) break;
+
+                NamedPipeServerStream? stream = null;
                 try
                 {
-                    var stream = new NamedPipeServerStream(
+                    stream = new NamedPipeServerStream(
                         PipeNames.MouseForward,
                         PipeDirection.InOut,
                         maxNumberOfServerInstances: 1,
@@ -54,12 +62,15 @@ public sealed class PipeServer : IAsyncDisposable
                         PipeOptions.Asynchronous);
 
                     _logger.LogInformation("Pipe server listening on {Pipe}", PipeNames.MouseForward);
-                    await stream.WaitForConnectionAsync(_cts.Token).ConfigureAwait(false);
+                    await stream.WaitForConnectionAsync(token).ConfigureAwait(false);
                     _logger.LogInformation("Child session connected to mouse pipe");
 
+                    // Hand ownership of the stream to PipeConnection; it disposes
+                    // when its read loop ends.
                     var connection = new PipeConnection(stream, _logger);
+                    stream = null;
                     ClientConnected?.Invoke(connection);
-                    await connection.RunAsync(_cts.Token).ConfigureAwait(false);
+                    await connection.RunAsync(token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -68,25 +79,45 @@ public sealed class PipeServer : IAsyncDisposable
                 catch (IOException ex)
                 {
                     _logger.LogWarning(ex, "Pipe server I/O error; continuing to listen");
-                    await Task.Delay(500, _cts.Token).ConfigureAwait(false);
+                    try { await Task.Delay(500, token).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Pipe server error; continuing to listen");
-                    await Task.Delay(1000, _cts.Token).ConfigureAwait(false);
+                    try { await Task.Delay(1000, token).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+                }
+                finally
+                {
+                    // Dispose the stream if it was never handed off to a connection
+                    // (e.g. WaitForConnectionAsync was cancelled or threw).
+                    stream?.Dispose();
                 }
             }
         });
     }
 
+    /// <summary>Stops the listener so a fresh Start() can be called again. Safe to call multiple times.</summary>
+    public async Task StopAsync()
+    {
+        Task? waitFor;
+        lock (_lifecycleGate)
+        {
+            if (_cts == null) return;
+            _cts.Cancel();
+            waitFor = _listenTask;
+            _cts = null;
+            _listenTask = null;
+        }
+        if (waitFor != null)
+        {
+            try { await waitFor.ConfigureAwait(false); } catch { /* ignore */ }
+        }
+        _logger.LogInformation("Pipe server stopped");
+    }
+
     public async ValueTask DisposeAsync()
     {
-        _cts.Cancel();
-        if (_listenTask != null)
-        {
-            try { await _listenTask.ConfigureAwait(false); } catch { /* ignore */ }
-        }
-        _cts.Dispose();
+        await StopAsync().ConfigureAwait(false);
     }
 }
 
@@ -215,17 +246,27 @@ public sealed class PipeConnection : IAsyncDisposable
                 var frame = await IpcProtocol.ReadFrameAsync(_stream, ct).ConfigureAwait(false);
                 if (frame == null) break; // EOF
                 var (type, payload) = frame.Value;
-                switch (type)
+                try
                 {
-                    case IpcPayloadType.RelativeMouseBatch:
-                        BatchReceived?.Invoke(IpcProtocol.DeserializeBatch(payload));
-                        break;
-                    case IpcPayloadType.RelativeMouseResult:
-                        ResultReceived?.Invoke(IpcProtocol.DeserializeResult(payload));
-                        break;
-                    case IpcPayloadType.Utf8Json:
-                        ControlMessageReceived?.Invoke(System.Text.Encoding.UTF8.GetString(payload));
-                        break;
+                    switch (type)
+                    {
+                        case IpcPayloadType.RelativeMouseBatch:
+                            BatchReceived?.Invoke(IpcProtocol.DeserializeBatch(payload));
+                            break;
+                        case IpcPayloadType.RelativeMouseResult:
+                            ResultReceived?.Invoke(IpcProtocol.DeserializeResult(payload));
+                            break;
+                        case IpcPayloadType.Utf8Json:
+                            ControlMessageReceived?.Invoke(System.Text.Encoding.UTF8.GetString(payload));
+                            break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // A malformed frame must NOT kill the entire read loop.
+                    // Log and continue reading; otherwise a single bad payload
+                    // from a misbehaving peer would take the whole pipe down.
+                    _logger.LogWarning(ex, "Bad frame (type={Type}, {Bytes} bytes); dropping", type, payload.Length);
                 }
             }
         }

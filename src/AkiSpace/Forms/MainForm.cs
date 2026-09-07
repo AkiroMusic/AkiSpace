@@ -289,7 +289,13 @@ public sealed class MainForm : Form
 
         if (_settingsService.Current.AutoConnect)
         {
-            BeginInvoke(async () => await ConnectAsync());
+            // Wrap the async-void in try/catch so any unobserved exception is
+            // routed to the logger instead of crashing the UI thread.
+            BeginInvoke(async () =>
+            {
+                try { await ConnectAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "AutoConnect failed"); }
+            });
         }
     }
 
@@ -392,7 +398,11 @@ public sealed class MainForm : Form
         }
         else
         {
-            BeginInvoke(async () => await ConnectAsync());
+            BeginInvoke(async () =>
+            {
+                try { await ConnectAsync(); }
+                catch (Exception ex) { _logger.LogError(ex, "Connect from hotkey/tray failed"); }
+            });
         }
     }
 

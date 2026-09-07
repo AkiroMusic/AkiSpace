@@ -21,7 +21,7 @@ public sealed class RdpActiveXHost : AxHost
     private readonly ILogger<RdpActiveXHost> _logger;
     private readonly object _ocxGate = new();
     private IntPtr? _inputWindow;
-    private bool _connecting;
+    private volatile bool _connecting;
     private CancellationTokenSource? _connectCts;
     private AxHost.ConnectionPointCookie? _eventCookie;
     private RdpEventSink? _eventSink;
@@ -552,6 +552,7 @@ public sealed class RdpActiveXHost : AxHost
     /// </summary>
     public void SendKeys(params (int ScanCode, bool Extended, bool KeyUp)[] strokes)
     {
+        if (strokes is null || strokes.Length == 0) return;
         lock (_ocxGate)
         {
             var ocx = GetOcx();
@@ -609,31 +610,37 @@ public sealed class RdpActiveXHost : AxHost
 
     private int TryGetExtendedDisconnectReason()
     {
-        try
+        lock (_ocxGate)
         {
-            var ocx = GetOcx();
-            if (ocx == null) return 0;
-            return Convert.ToInt32(GetComProperty(ocx, "ExtendedDisconnectReason"));
-        }
-        catch
-        {
-            return 0;
+            try
+            {
+                var ocx = GetOcx();
+                if (ocx == null) return 0;
+                return Convert.ToInt32(GetComProperty(ocx, "ExtendedDisconnectReason"));
+            }
+            catch
+            {
+                return 0;
+            }
         }
     }
 
     private string? TryGetErrorDescription(int disconnectReason, int extendedDisconnectReason)
     {
-        try
+        lock (_ocxGate)
         {
-            var ocx = GetOcx();
-            if (ocx == null) return null;
-            return Convert.ToString(
-                InvokeComMethod(ocx, "GetErrorDescription", disconnectReason, extendedDisconnectReason),
-                System.Globalization.CultureInfo.CurrentCulture);
-        }
-        catch
-        {
-            return null;
+            try
+            {
+                var ocx = GetOcx();
+                if (ocx == null) return null;
+                return Convert.ToString(
+                    InvokeComMethod(ocx, "GetErrorDescription", disconnectReason, extendedDisconnectReason),
+                    System.Globalization.CultureInfo.CurrentCulture);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 

@@ -123,6 +123,11 @@ public sealed class MouseForwarder : IDisposable
                 _handlingConfirmed = false;
                 _accumulatedX = _accumulatedY = 0;
                 _cursorCapture.Release();
+
+                // Stop the pipe server so we don't keep the listening handle
+                // open while the feature is off. Fire-and-forget because this
+                // is a synchronous event-handler call path.
+                _ = _pipeServer.StopAsync();
             }
         }
     }

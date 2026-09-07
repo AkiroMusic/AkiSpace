@@ -35,7 +35,8 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     private readonly object _gate = new();
     private readonly List<Subscription> _subscriptions = new();
     private Thread? _thread;
-    private IntPtr _hwnd;
+    private IntPtr _hwnd;  // protected by _hwndLock; volatile for inter-thread visibility
+    private readonly object _hwndLock = new();
     private int _subscriberCount;
     private int _disposed;
 
@@ -90,9 +91,20 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     private void StopCoreLocked()
     {
         if (_thread == null || !_thread.IsAlive) return;
-        if (_hwnd != IntPtr.Zero)
+        // Snapshot _hwnd under _hwndLock so a concurrent ThreadMain that is
+        // mid-create doesn't have its handle zeroed out from under us before
+        // we Post WM_QUIT. Capture the value to use after releasing the lock.
+        IntPtr hwnd;
+        lock (_hwndLock)
         {
-            User32.PostMessage(_hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+            hwnd = _hwnd;
+            // Clear the field so a quick restart doesn't try to PostMessage
+            // to a window owned by the old (dying) thread.
+            _hwnd = IntPtr.Zero;
+        }
+        if (hwnd != IntPtr.Zero)
+        {
+            User32.PostMessage(hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
         }
         _thread = null;
         _logger.LogInformation("Raw input monitor stopped");
@@ -102,21 +114,22 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     {
         var hwndSource = new HiddenWindowHost();
         hwndSource.RawInputReceived += OnRawInputReceived;
-        _hwnd = hwndSource.Handle;
+        // Publish the new handle atomically with a memory barrier.
+        lock (_hwndLock) { _hwnd = hwndSource.Handle; }
 
         var device = new User32.RAWINPUTDEVICE
         {
             usUsagePage = 0x01, // Generic Desktop
             usUsage = 0x02,     // Mouse
             dwFlags = InputConstants.RIDEV_INPUTSINK,
-            hwndTarget = _hwnd,
+            hwndTarget = hwndSource.Handle,
         };
         var registered = User32.RegisterRawInputDevices(
             new[] { device }, 1, (uint)Marshal.SizeOf<User32.RAWINPUTDEVICE>());
         if (!registered)
         {
             _logger.LogError("RegisterRawInputDevices failed, Win32 error {Error}", Marshal.GetLastWin32Error());
-            _hwnd = IntPtr.Zero;
+            lock (_hwndLock) { _hwnd = IntPtr.Zero; }
             hwndSource.Dispose();
             return;
         }
@@ -134,10 +147,10 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
                 usUsagePage = 0x01,
                 usUsage = 0x02,
                 dwFlags = InputConstants.RIDEV_REMOVE,
-                hwndTarget = _hwnd,
+                hwndTarget = hwndSource.Handle,
             };
             User32.RegisterRawInputDevices(new[] { remove }, 1, (uint)Marshal.SizeOf<User32.RAWINPUTDEVICE>());
-            _hwnd = IntPtr.Zero;
+            lock (_hwndLock) { _hwnd = IntPtr.Zero; }
             hwndSource.Dispose();
         }
     }
