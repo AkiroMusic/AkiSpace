@@ -18,6 +18,7 @@ public sealed class SetupDialog : Form
     private readonly ILogger<SetupDialog> _logger;
     private readonly EnvironmentVerifier _verifier;
     private readonly ChildSessionManager _sessionManager;
+    private readonly SettingsService? _settingsService;
 
     // Known RDP Wrapper source repos
     private const string SergiyeReleasesUrl = "https://github.com/sergiye/rdpWrapper/releases";
@@ -43,11 +44,13 @@ public sealed class SetupDialog : Form
     public SetupDialog(
         ILogger<SetupDialog> logger,
         EnvironmentVerifier verifier,
-        ChildSessionManager sessionManager)
+        ChildSessionManager sessionManager,
+        SettingsService? settingsService = null)
     {
         _logger = logger;
         _verifier = verifier;
         _sessionManager = sessionManager;
+        _settingsService = settingsService;
 
         BuildUi();
         RunChecks();
@@ -221,7 +224,18 @@ public sealed class SetupDialog : Form
         btn.Cursor = Cursors.Hand;
     }
 
-    private void RunChecks()
+    private async void RunChecks()
+    {
+        // Run the fast checks synchronously so the list paints immediately.
+        // The slow listener probe runs in the background and the list is
+        // refreshed when it completes — this avoids a multi-second UI freeze
+        // when the listener is cold.
+        var results = await _verifier.RunAllChecksAsync();
+        if (IsDisposed) return;
+        RenderChecks(results);
+    }
+
+    private void RenderChecks(List<EnvCheckResult> results)
     {
         _listView.BeginUpdate();
         _listView.Items.Clear();
@@ -230,7 +244,7 @@ public sealed class SetupDialog : Form
         // which has a different meaning (it checks whether the hook is currently
         // ACTIVE in the running TermService, not whether the wrapper is installed).
         EnvCheckResult? wrapperInstallCheck = null;
-        foreach (var check in _verifier.RunAllChecks())
+        foreach (var check in results)
         {
             var item = new ListViewItem(check.Name);
             item.SubItems.Add(check.Pass ? "✓ 通过" : "✗ 失败");
@@ -253,19 +267,111 @@ public sealed class SetupDialog : Form
 
     private void RunFixes()
     {
-        var confirm = MessageBox.Show(
-            "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n" +
-            "  1. 启用 RDP（fDenyTSConnections=0）\n" +
-            "  2. 允许多会话（fSingleSessionPerUser=0）\n" +
-            "  3. 设置 StartRCM=1（家庭版修复）\n" +
-            "  4. 安全加固（TLS + 高加密 + NLA）\n" +
-            "  5. 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
-            "  6. 重启 TermService 服务\n" +
-            "  7. 启用子会话\n\n" +
-            "注意：RDP Wrapper 本身（rdpwrap.dll）不会自动安装，请按本对话框顶部的指引完成。\n\n" +
-            "是否继续？",
-            "AkiSpace 环境修复", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-        if (confirm != DialogResult.Yes) return;
+        // Ask the user up front whether to disable the TermWrap hook — this is
+        // mutually exclusive with the standard-RDP Home setup, so the default
+        // must reflect the user's actual intent in Settings.
+        var settings = _settingsService?.Current;
+        var isChildMode = settings?.ConnectionMode == ConnectionMode.ChildSession;
+        var prompt = isChildMode
+            ? "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n\n" +
+              "  ✓ 禁用 RDP Wrapper (TermWrap.dll)\n" +
+              "  ✓ 启用 RDP（fDenyTSConnections=0）\n" +
+              "  ✓ 允许多会话（fSingleSessionPerUser=0）\n" +
+              "  ✓ 设置 StartRCM=1（家庭版修复）\n" +
+              "  ✓ 安全加固（TLS + 高加密 + NLA）\n" +
+              "  ✓ 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
+              "  ✓ 防火墙阻断 3389 公网入站（删除默认 RDP 公开 allow）\n" +
+              "  ✓ 重启 TermService 服务（会踢掉现有 RDP 会话）\n" +
+              "  ✓ 启用子会话\n\n" +
+              "RDP Wrapper 与子会话模式互斥（BetterGI 官方文档已说明），\n" +
+              "本工具将禁用 TermWrap 并恢复原生 termsrv.dll 以启用子会话。\n\n" +
+              "注意：RDP Wrapper 本身（rdpwrap.dll）需按本对话框顶部的指引手动安装。\n\n" +
+              "是否继续？"
+            : "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n\n" +
+              "  ✗ 保留 RDP Wrapper hook（标准 RDP 模式必需）\n" +
+              "  ✓ 启用 RDP（fDenyTSConnections=0）\n" +
+              "  ✓ 允许多会话（fSingleSessionPerUser=0）\n" +
+              "  ✓ 设置 StartRCM=1（家庭版修复）\n" +
+              "  ✓ 安全加固（TLS + 高加密 + NLA）\n" +
+              "  ✓ 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
+              "  ✓ 防火墙阻断 3389 公网入站（删除默认 RDP 公开 allow）\n" +
+              "  ✓ 重启 TermService 服务（会踢掉现有 RDP 会话）\n\n" +
+              "注意：RDP Wrapper 本身（rdpwrap.dll）需按本对话框顶部的指引手动安装。\n" +
+              "如果你想在标准 RDP 模式下也禁用 TermWrap，请先在「设置」中切换到「子会话」模式，\n" +
+              "或勾选下方的「同时禁用 TermWrap」选项。\n\n" +
+              "是否继续？";
+
+        // Build a confirmation dialog with an optional override checkbox.
+        // We use a small inline Form rather than a YesNo MessageBox so we can
+        // capture the override state.
+        using var confirm = new Form
+        {
+            Text = "AkiSpace 环境修复",
+            Size = new Size(560, 320),
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            BackColor = Theme.Bg,
+            ForeColor = Theme.Text,
+            Font = new Font("Microsoft YaHei UI", 9f),
+        };
+        var lbl = new Label
+        {
+            Text = prompt,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(16, 12, 16, 4),
+            ForeColor = Theme.Text,
+            BackColor = Theme.Bg,
+        };
+        var chkForceDisable = new CheckBox
+        {
+            Text = "同时禁用 TermWrap（覆盖默认行为）",
+            Visible = !isChildMode,  // hide the checkbox in child-session mode (already disabled by default)
+            AutoSize = true,
+            Dock = DockStyle.Bottom,
+            Padding = new Padding(16, 0, 16, 4),
+            ForeColor = Theme.TextDim,
+            BackColor = Theme.Bg,
+        };
+        var btnRow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 48,
+            FlowDirection = FlowDirection.RightToLeft,
+            BackColor = Theme.Surface,
+            Padding = new Padding(8),
+        };
+        var btnOk = new Button
+        {
+            Text = "继续",
+            Size = new Size(100, 32),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.AccentBlue,
+            ForeColor = Color.White,
+            FlatAppearance = { BorderSize = 0 },
+            DialogResult = DialogResult.OK,
+        };
+        var btnCancel = new Button
+        {
+            Text = "取消",
+            Size = new Size(90, 32),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.Control,
+            ForeColor = Theme.Text,
+            FlatAppearance = { BorderColor = Theme.Border },
+            DialogResult = DialogResult.Cancel,
+        };
+        btnRow.Controls.Add(btnCancel);
+        btnRow.Controls.Add(btnOk);
+        confirm.Controls.Add(lbl);
+        confirm.Controls.Add(chkForceDisable);
+        confirm.Controls.Add(btnRow);
+        confirm.AcceptButton = btnOk;
+        confirm.CancelButton = btnCancel;
+
+        if (confirm.ShowDialog(this) != DialogResult.OK) return;
+        var overrideDisable = chkForceDisable.Checked;
 
         // Re-launch the app elevated with --fix-env flag.
         // The elevated process shows a console with fix results, then exits.
@@ -278,7 +384,8 @@ public sealed class SetupDialog : Form
                 return;
             }
 
-            var psi = new ProcessStartInfo(exePath, "--fix-env")
+            var args = overrideDisable ? "--fix-env --disable-wrapper" : "--fix-env";
+            var psi = new ProcessStartInfo(exePath, args)
             {
                 Verb = "runas",          // UAC elevation
                 UseShellExecute = true,  // Required for Verb

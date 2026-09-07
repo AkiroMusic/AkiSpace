@@ -19,15 +19,17 @@ public sealed class EnvironmentVerifier
 {
     private readonly ILogger<EnvironmentVerifier> _logger;
     private readonly ChildSessionManager _sessionManager;
+    private readonly SettingsService _settingsService;
 
     // Static logger handle for the few static helpers (ReadDword/SetDword/FirewallRuleExists).
     // Defaults to NullLogger; the first instance constructed sets the shared sink.
     private static ILogger _sharedLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance;
 
-    public EnvironmentVerifier(ILogger<EnvironmentVerifier> logger, ChildSessionManager sessionManager)
+    public EnvironmentVerifier(ILogger<EnvironmentVerifier> logger, ChildSessionManager sessionManager, SettingsService settingsService)
     {
         _logger = logger;
         _sessionManager = sessionManager;
+        _settingsService = settingsService;
         _sharedLogger = logger;  // last-constructed wins; sufficient for this single-instance service
     }
 
@@ -54,10 +56,68 @@ public sealed class EnvironmentVerifier
             CheckTermServiceRunning(),
             CheckFirewallLoopbackRule(),
             CheckChildSessions(),
+            // Probe the listener synchronously; the caller can avoid the
+            // UI freeze by using RunAllChecksAsync which moves this one
+            // call onto a worker thread.
             CheckRdpListener(),
             CheckTermsrvVersion(),
             CheckRdpWrapperHook(),
         };
+    }
+
+    /// <summary>
+    /// Async variant: runs the synchronous checks inline (fast), then
+    /// probes the listener on a worker thread (up to ~10s on a cold listener)
+    /// and patches the returned list in place. Returns the fully populated list.
+    /// </summary>
+    public async Task<List<EnvCheckResult>> RunAllChecksAsync(CancellationToken ct = default)
+    {
+        var results = RunAllChecks();
+        // Find the listener check (index 7) and replace with a "checking..." placeholder.
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (results[i].Name.Contains("RDP 监听"))
+            {
+                results[i] = new EnvCheckResult(results[i].Name, false, "检查中...");
+                break;
+            }
+        }
+        var port = _sessionManager.GetConfiguredRdpPort();
+        var active = await Task.Run(() => IsListenerActiveInternal(port), ct);
+        for (var i = 0; i < results.Count; i++)
+        {
+            if (results[i].Name.Contains("RDP 监听"))
+            {
+                results[i] = new EnvCheckResult(
+                    results[i].Name, active,
+                    active ? $"端口 {port} 正在监听" : "监听失败（TermService 未运行或未解锁）");
+                break;
+            }
+        }
+        return results;
+    }
+
+    private static bool IsListenerActiveInternal(int port)
+    {
+        var endpoints = new[] { "127.0.0.1", "0.0.0.0" };
+        var perAttemptTimeoutMs = 1500;
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            foreach (var host in endpoints)
+            {
+                using var client = new System.Net.Sockets.TcpClient();
+                try
+                {
+                    var task = client.ConnectAsync(host, port);
+                    if (task.Wait(perAttemptTimeoutMs) && client.Connected)
+                        return true;
+                }
+                catch { }
+            }
+            System.Threading.Thread.Sleep(200);
+        }
+        return false;
     }
 
     public EnvCheckResult CheckRdpEnabled()
@@ -135,17 +195,29 @@ public sealed class EnvironmentVerifier
     // ---- Fixes ----
 
     /// <summary>Applies the registry settings + firewall rule. Requires admin.</summary>
-    public List<EnvCheckResult> ApplyAllFixes()
+    public List<EnvCheckResult> ApplyAllFixes(bool alsoDisableRdpWrapper = false)
     {
         var results = new List<EnvCheckResult>();
 
-        // Disable RDP Wrapper hook (TermWrap.dll) if active. This hook prevents the
-        // child-session broker from creating child sessions even when WTS reports
-        // them as enabled. BetterGI's docs explicitly state RDP Wrapper and the
-        // child-session feature are mutually exclusive.
-        var disableWrapOk = DisableRdpWrapperHook();
-        results.Add(new("禁用 RDP Wrapper (TermWrap.dll)", disableWrapOk,
-            disableWrapOk ? "TermService ServiceDll 已恢复为 %SystemRoot%\\System32\\termsrv.dll" : "无需禁用或失败"));
+        // Disable RDP Wrapper hook (TermWrap.dll) ONLY when the user is opting
+        // into child-session mode (where the native termsrv.dll must be active)
+        // or has explicitly ticked the override. This avoids breaking the
+        // Home-edition standard-RDP case where the TermWrap hook IS the
+        // multi-session unlock (mutually exclusive with child sessions, per
+        // BetterGI's docs).
+        var shouldDisableWrapper = alsoDisableRdpWrapper
+            || _settingsService.Current.ConnectionMode == ConnectionMode.ChildSession;
+        if (shouldDisableWrapper)
+        {
+            var disableWrapOk = DisableRdpWrapperHook();
+            results.Add(new("禁用 RDP Wrapper (TermWrap.dll)", disableWrapOk,
+                disableWrapOk ? "TermService ServiceDll 已恢复为 %SystemRoot%\\System32\\termsrv.dll" : "无需禁用或失败"));
+        }
+        else
+        {
+            results.Add(new("保留 RDP Wrapper hook", true,
+                "当前为标准 RDP 模式，TermWrap.dll 是多会话解锁层，跳过禁用"));
+        }
 
         // fDenyTSConnections = 0 (enable RDP)
         SetDword(TerminalServerKey, RegistryKeys.FDenyTSConnections, 0);
@@ -343,10 +415,53 @@ public sealed class EnvironmentVerifier
     {
         try
         {
+            // Static helper can't reach the instance field; use the registry directly
+            // (same logic as ChildSessionManager.GetConfiguredRdpPort).
+            var port = 3389;
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(RegistryKeys.RdpTcp);
+                var value = key?.GetValue(RegistryKeys.PortNumber) as int?;
+                if (value is > 0 and <= 65535) port = value.Value;
+            }
+            catch { /* keep default 3389 */ }
+
             if (FirewallRuleExists()) return true;
-            var psi = new ProcessStartInfo("netsh",
-                "advfirewall firewall add rule name=\"AkiSpace RDP Loopback\" dir=in action=allow " +
-                "protocol=TCP localport=3389 remoteip=127.0.0.1")
+
+            // Add the loopback allow rule (for 127.0.0.1)
+            if (!RunNetsh(BuildFirewallAddRule("AkiSpace RDP Loopback", "allow", port, "127.0.0.1"), 15000))
+                return false;
+
+            // Also delete the default public allow (if any) and add a matching block rule
+            // so the user's stated "loopback only" promise is actually enforced.
+            RunNetsh("advfirewall firewall delete rule name=\"Remote Desktop - User Mode (TCP-In)\"", 10000);
+            RunNetsh(BuildFirewallAddRule("AkiSpace RDP Block", "block", port, "any"), 15000);
+
+            return FirewallRuleExists();
+        }
+        catch (Exception ex)
+        {
+            LogWarning(ex, "EnsureFirewallLoopbackRule failed");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Builds the netsh "advfirewall firewall add rule" argument string.
+    /// Public so SelfTest can assert the rule honors the configured RDP port.
+    /// </summary>
+    public static string BuildFirewallAddRule(string name, string action, int port, string remoteIp)
+    {
+        var remote = remoteIp == "any" ? string.Empty : $" remoteip={remoteIp}";
+        return $"advfirewall firewall add rule name=\"{name}\" dir=in action={action} " +
+               $"protocol=TCP localport={port}{remote}";
+    }
+
+    private static bool RunNetsh(string args, int timeoutMs)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("netsh", args)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -354,13 +469,13 @@ public sealed class EnvironmentVerifier
                 CreateNoWindow = true,
             };
             using var p = Process.Start(psi);
-            if (p == null) return false;
-            p.WaitForExit(15000);
-            return FirewallRuleExists();
+            if (p is null) return false;
+            p.WaitForExit(timeoutMs);
+            return p.ExitCode == 0;
         }
         catch (Exception ex)
         {
-            LogWarning(ex, "EnsureFirewallLoopbackRule failed");
+            LogWarning(ex, $"netsh failed: {args}");
             return false;
         }
     }

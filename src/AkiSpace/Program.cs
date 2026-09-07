@@ -10,14 +10,15 @@ namespace AkiSpace;
     {
         /// <summary>The main entry point for the application.</summary>
         [STAThread]
-        static void Main(string[] args)
+    static void Main(string[] args)
+    {
+        // --fix-env [--disable-wrapper]: re-launched elevated to apply environment fixes.
+        if (args.Length > 0 && args[0].Equals("--fix-env", StringComparison.OrdinalIgnoreCase))
         {
-            // --fix-env: re-launched elevated to apply environment fixes.
-            if (args.Contains("--fix-env", StringComparer.OrdinalIgnoreCase))
-            {
-                RunFixMode();
-                return;
-            }
+            var alsoDisableWrapper = args.Any(a => a.Equals("--disable-wrapper", StringComparison.OrdinalIgnoreCase));
+            RunFixMode(alsoDisableWrapper);
+            return;
+        }
 
             // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
             ApplicationConfiguration.Initialize();
@@ -54,7 +55,7 @@ namespace AkiSpace;
     /// Elevated mode: apply environment fixes (registry, firewall, service, child sessions).
     /// Shows a simple console window so the user sees progress without a full WinForms UI.
     /// </summary>
-    static void RunFixMode()
+    static void RunFixMode(bool alsoDisableWrapper)
     {
         // Allocate a console for visible output
         AllocConsole();
@@ -80,7 +81,7 @@ namespace AkiSpace;
         Console.WriteLine("正在应用环境修复...");
         Console.WriteLine();
 
-        var results = verifier.ApplyAllFixes();
+        var results = verifier.ApplyAllFixes(alsoDisableWrapper);
         foreach (var r in results)
         {
             var icon = r.Pass ? "✓" : "✗";

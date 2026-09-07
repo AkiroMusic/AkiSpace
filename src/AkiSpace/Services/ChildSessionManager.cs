@@ -173,4 +173,17 @@ public sealed class ChildSessionManager
         }
         return false;
     }
+
+    /// <summary>
+    /// Async wrapper for <see cref="IsRdpListenerActive"/> that runs the (potentially
+    /// up-to-10-second) TCP probe on a worker thread so UI callers don't freeze.
+    /// </summary>
+    public Task<bool> IsRdpListenerActiveAsync(CancellationToken ct = default)
+    {
+        return Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+            return IsRdpListenerActive();
+        }, ct);
+    }
 }

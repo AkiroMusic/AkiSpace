@@ -22,6 +22,7 @@ public sealed class RdpActiveXHost : AxHost
     private readonly object _ocxGate = new();
     private IntPtr? _inputWindow;
     private bool _connecting;
+    private CancellationTokenSource? _connectCts;
     private AxHost.ConnectionPointCookie? _eventCookie;
     private RdpEventSink? _eventSink;
 
@@ -158,45 +159,64 @@ public sealed class RdpActiveXHost : AxHost
         _connecting = true;
         IsFullScreen = false;
 
+        // Reset the cancellation token for this connect attempt. DisconnectSession
+        // (or Dispose) will cancel it so the retry loop exits cleanly when the
+        // user clicks "Disconnect" mid-retry.
+        var cts = new CancellationTokenSource();
+        Interlocked.Exchange(ref _connectCts, cts)?.Dispose();
+
         // Run the connection loop on the UI thread (ActiveX is STA).
         // BeginInvoke keeps the caller non-blocking; retry delays happen on a
         // worker thread but each attempt marshals back to the UI thread.
         _ = Task.Run(async () =>
         {
-            const int maxRetries = 3;
-            for (var attempt = 1; attempt <= maxRetries; attempt++)
+            try
             {
-                try
+                const int maxRetries = 3;
+                for (var attempt = 1; attempt <= maxRetries; attempt++)
                 {
-                    if (IsDisposed || Disposing)
+                    if (cts.IsCancellationRequested || IsDisposed || Disposing)
                     {
                         _connecting = false;
                         return;
                     }
 
-                    // Marshal the connect attempt to the UI thread
-                    var ok = await InvokeOnUiThreadAsync(() =>
-                        TryConnectCore(
-                            desktopWidth, desktopHeight, colorDepth, rdpPort,
-                            smartSizing, keyboardHookToRemote, audioRedirected,
-                            userName, password, useChildSession));
+                    try
+                    {
+                        // Marshal the connect attempt to the UI thread
+                        var ok = await InvokeOnUiThreadAsync(() =>
+                            TryConnectCore(
+                                desktopWidth, desktopHeight, colorDepth, rdpPort,
+                                smartSizing, keyboardHookToRemote, audioRedirected,
+                                userName, password, useChildSession));
 
-                    if (ok) return;
+                        if (ok) return;
 
-                    _logger.LogWarning("Session connect attempt {Attempt}/{Max} failed, retrying", attempt, maxRetries);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Session connect attempt {Attempt}/{Max} threw, retrying", attempt, maxRetries);
-                }
+                        _logger.LogWarning("Session connect attempt {Attempt}/{Max} failed, retrying", attempt, maxRetries);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Session connect attempt {Attempt}/{Max} threw, retrying", attempt, maxRetries);
+                    }
 
-                if (attempt < maxRetries)
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(1 << (attempt - 1)));
+                    if (attempt < maxRetries)
+                    {
+                        try
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(1 << (attempt - 1)), cts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            _connecting = false;
+                            return;
+                        }
+                    }
                 }
             }
-
-            _connecting = false;
+            finally
+            {
+                _connecting = false;
+            }
         });
     }
 
@@ -474,6 +494,10 @@ public sealed class RdpActiveXHost : AxHost
     /// <summary>Disconnects the RDP session (child session stays alive).</summary>
     public void DisconnectSession()
     {
+        // Cancel any in-flight retry loop BEFORE clearing _connecting, so the
+        // background Task.Run can observe the cancel and exit cleanly without
+        // firing a second connect attempt.
+        Interlocked.Exchange(ref _connectCts, null)?.Cancel();
         _connecting = false;
         IsConnected = false;
         try

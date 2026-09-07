@@ -121,7 +121,8 @@ void Check(string name, bool pass, string? detail = null)
 // ---- 7. EnvironmentVerifier read-only checks ----
 {
     var mgr = new ChildSessionManager(Microsoft.Extensions.Logging.Abstractions.NullLogger<ChildSessionManager>.Instance);
-    var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr);
+    var envSettings = new AkiSpace.Services.SettingsService(Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance);
+    var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr, envSettings);
     var checks = verifier.RunAllChecks();
     Check("EnvVerifier ran all 10 checks", checks.Count == 10, $"got {checks.Count}");
     foreach (var c in checks)
@@ -144,7 +145,8 @@ void Check(string name, bool pass, string? detail = null)
         try
         {
             var mgr = new ChildSessionManager(Microsoft.Extensions.Logging.Abstractions.NullLogger<ChildSessionManager>.Instance);
-            var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr);
+            var envSettings2 = new AkiSpace.Services.SettingsService(Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance);
+            var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr, envSettings2);
             using var dialog = new AkiSpace.Forms.SetupDialog(
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Forms.SetupDialog>.Instance,
                 verifier, mgr);

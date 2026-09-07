@@ -201,6 +201,7 @@ public sealed class MainForm : Form
         _btnGameMouse.ForeColor = Theme.Text;
         _btnGameMouse.FlatAppearance.BorderColor = Theme.Border;
         _btnGameMouse.Enabled = false;
+        _btnGameMouse.Visible = _settingsService.Current.ConnectionMode != ConnectionMode.ChildSession;
         _btnGameMouse.Click += (_, _) => ToggleGameMouse();
 
         _btnLaunch.Text = "启动程序";
@@ -317,18 +318,27 @@ public sealed class MainForm : Form
 
     private void RegisterGlobalHotkeys()
     {
+        if (!_settingsService.Current.EnableGlobalHotkey)
+        {
+            _logger.LogInformation("Global hotkeys disabled by settings");
+            return;
+        }
         try
         {
             // Ctrl+Shift+D: Toggle connect/disconnect
             if (!RegisterHotKey(Handle, HOTKEY_TOGGLE_CONNECT, MOD_CONTROL | MOD_SHIFT, VK_D))
             {
-                _logger.LogWarning("Failed to register hotkey Ctrl+Shift+D (may be in use)");
+                var err = Marshal.GetLastWin32Error();
+                _logger.LogWarning("Failed to register hotkey Ctrl+Shift+D (Win32 error {Error}); may be in use", err);
+                _statusLabel.Text = "全局热键 Ctrl+Shift+D 注册失败（占用中？）";
             }
 
             // Ctrl+Space: Show/restore window
             if (!RegisterHotKey(Handle, HOTKEY_SHOW_WINDOW, MOD_CONTROL | MOD_ALT, VK_SPACE))
             {
-                _logger.LogWarning("Failed to register hotkey Ctrl+Alt+Space (may be in use)");
+                var err = Marshal.GetLastWin32Error();
+                _logger.LogWarning("Failed to register hotkey Ctrl+Alt+Space (Win32 error {Error}); may be in use", err);
+                _statusLabel.Text = "全局热键 Ctrl+Alt+Space 注册失败（占用中？）";
             }
         }
         catch (Exception ex)
@@ -430,9 +440,10 @@ public sealed class MainForm : Form
             // termsrv.dll doesn't run an RDP server). BetterGI connects fine in
             // this state (it also uses ConnectToChildSession, which doesn't need
             // the TCP listener). So only enforce the TCP-probe pre-check for
-            // standard RDP mode.
+            // standard RDP mode. The probe runs on a worker thread so the UI
+            // does not freeze for up to ~10s on a cold listener.
             if (settings.ConnectionMode != ConnectionMode.ChildSession
-                && !_sessionManager.IsRdpListenerActive())
+                && !await _sessionManager.IsRdpListenerActiveAsync())
             {
                 MessageBox.Show(
                     "RDP 监听器暂时未响应连接探测。可能原因：\n" +
@@ -562,7 +573,13 @@ public sealed class MainForm : Form
             _btnConnect.Enabled = false;
             _btnDisconnect.Enabled = true;
             _btnTerminate.Enabled = true;
-            _btnGameMouse.Enabled = true;
+            // Only enable GameMouse in non-child-session mode (the custom mouse
+            // forwarder requires a paired replay agent in the child session,
+            // which is not yet implemented; the child-session path does not need
+            // it because the RDP control's own absolute cursor suffices).
+            var enableGameMouse = settings.ConnectionMode != ConnectionMode.ChildSession;
+            _btnGameMouse.Enabled = enableGameMouse;
+            _btnGameMouse.Visible = enableGameMouse;
             _btnLaunch.Enabled = true;
             _isConnected = true;
             UpdateTrayIcon(true);
