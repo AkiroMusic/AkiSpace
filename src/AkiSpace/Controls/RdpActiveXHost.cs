@@ -660,33 +660,6 @@ public sealed class RdpActiveXHost : AxHost
             BindingFlags.InvokeMethod,
             null, target, args);
 
-    /// <summary>
-    /// Retrieves IMsRdpExtendedSettings from the OCX via QueryInterface on the
-    /// raw IUnknown pointer. The generic __ComObject RCW cannot be cast
-    /// directly to a custom [ComImport] interface, but the underlying COM
-    /// object does support it — so we go through the pointer.
-    /// </summary>
-    private static RdpCom.IMsRdpExtendedSettings GetExtendedSettings(object ocx)
-    {
-        var pUnknown = System.Runtime.InteropServices.Marshal.GetIUnknownForObject(ocx);
-        try
-        {
-            var iid = new Guid("302D8188-0052-4807-806A-362B628F9AC5");
-            var hr = System.Runtime.InteropServices.Marshal.QueryInterface(pUnknown, ref iid, out var pInterface);
-            if (hr != 0)
-            {
-                throw new System.Runtime.InteropServices.COMException(
-                    $"IMsRdpExtendedSettings not available (HRESULT 0x{hr:X8})", hr);
-            }
-            return (RdpCom.IMsRdpExtendedSettings)
-                System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(pInterface);
-        }
-        finally
-        {
-            System.Runtime.InteropServices.Marshal.Release(pUnknown);
-        }
-    }
-
     // ---- AxHost event wiring ----
 
     protected override void OnCreateControl()

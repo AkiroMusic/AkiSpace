@@ -57,7 +57,7 @@ public sealed class SettingsDialog : Form
             Dock = DockStyle.Top,
             Height = 520,
             ColumnCount = 2,
-            RowCount = 14,
+            RowCount = 15,
             Padding = new Padding(20, 16, 20, 8),
             BackColor = DarkBg,
         };

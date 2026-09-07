@@ -122,7 +122,7 @@ public sealed class PipeClient : IAsyncDisposable
         try
         {
             if (IsConnected) return;
-            var linked = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
 
             while (!linked.IsCancellationRequested)
             {

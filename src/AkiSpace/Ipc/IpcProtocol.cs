@@ -82,7 +82,7 @@ public static class IpcProtocol
         var memory = buffer.AsMemory();
         while (total < count)
         {
-            var n = await stream.ReadAsync(memory[total..(count - total)], ct).ConfigureAwait(false);
+            var n = await stream.ReadAsync(memory[total..count], ct).ConfigureAwait(false);
             if (n == 0) break;
             total += n;
         }

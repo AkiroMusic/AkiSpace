@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AkiSpace/AkiSpace.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AkiSpace.SelfTest/AkiSpace.SelfTest.csproj" />
+  </Folder>
 </Solution>

@@ -124,7 +124,7 @@ void Check(string name, bool pass, string? detail = null)
     var mgr = new ChildSessionManager(Microsoft.Extensions.Logging.Abstractions.NullLogger<ChildSessionManager>.Instance);
     var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr);
     var checks = verifier.RunAllChecks();
-    Check("EnvVerifier ran all 9 checks", checks.Count == 9, $"got {checks.Count}");
+    Check("EnvVerifier ran all 10 checks", checks.Count == 10, $"got {checks.Count}");
     foreach (var c in checks)
     {
         Console.WriteLine($"[ENV] {c.Name}: {(c.Pass ? "PASS" : "FAIL")} — {c.Detail}");

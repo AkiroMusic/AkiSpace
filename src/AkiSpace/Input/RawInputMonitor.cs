@@ -238,6 +238,7 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         private readonly string _className;
         private IntPtr _hwnd;
         private IntPtr _module;
+        private User32.WndProcDelegate _wndProcDelegate;
 
         public event Action<IntPtr>? RawInputReceived;
 
@@ -264,8 +265,6 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
             if (_hwnd == IntPtr.Zero)
                 throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
         }
-
-        private User32.WndProcDelegate _wndProcDelegate;
 
         public IntPtr Handle => _hwnd;
 

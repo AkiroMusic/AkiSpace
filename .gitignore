@@ -43,8 +43,4 @@ packages/
 
 # Publish outputs
 publish/
-
-# Local development
-*.user
-*.suo
 EOF
