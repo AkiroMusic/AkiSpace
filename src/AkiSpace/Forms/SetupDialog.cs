@@ -145,15 +145,26 @@ public sealed class SetupDialog : Form
         _panelHomeGuide.BackColor = Color.FromArgb(45, 35, 20);  // amber-tinted dark
         _panelHomeGuide.BorderStyle = BorderStyle.FixedSingle;
         _panelHomeGuide.Padding = new Padding(14, 12, 14, 12);
-        _panelHomeGuide.AutoSize = true;
-        _panelHomeGuide.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        // No AutoSize - use proper layout with FlowLayoutPanel
+
+        // Use a FlowLayoutPanel inside the panel for proper auto-layout
+        var flow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            WrapContents = false,
+            Padding = new Padding(0),
+            BackColor = Color.FromArgb(45, 35, 20),
+        };
 
         // Title row
         _lblHomeTitle.Text = "⚠ 家庭版需要安装 RDP Wrapper";
         _lblHomeTitle.Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold);
         _lblHomeTitle.ForeColor = Theme.AccentAmber;
         _lblHomeTitle.AutoSize = true;
-        _lblHomeTitle.Location = new Point(0, 0);
+        _lblHomeTitle.Margin = new Padding(0, 0, 0, 8);
 
         // Body text with the actual version number
         _lblHomeBody.Text =
@@ -163,54 +174,61 @@ public sealed class SetupDialog : Form
             "AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。";
         _lblHomeBody.Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
         _lblHomeBody.ForeColor = Theme.Text;
-        _lblHomeBody.Location = new Point(0, 28);
         _lblHomeBody.AutoSize = true;
         _lblHomeBody.MaximumSize = new Size(720, 0);
+        _lblHomeBody.Margin = new Padding(0, 0, 0, 8);
 
         // Version row (highlighted)
         var termsrvVer = _sessionManager.GetTermsrvVersion();
         _lblTermsrvVersion.Text = $"本机 termsrv.dll 版本:  {termsrvVer}    （在 rdpwrap.ini 中需找到 [10.0.{termsrvVer.Split('.')[2]}.xxxx] 段落）";
         _lblTermsrvVersion.Font = new Font("Consolas", 9.5f, FontStyle.Bold);
         _lblTermsrvVersion.ForeColor = Theme.AccentBlue;
-        _lblTermsrvVersion.Location = new Point(0, 100);
         _lblTermsrvVersion.AutoSize = true;
+        _lblTermsrvVersion.Margin = new Padding(0, 0, 0, 16);
 
-        // Button row
-        int y = 130;
+        // Button row - use a TableLayoutPanel for 2-column layout
+        var buttonTable = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 3,
+            BackColor = Color.FromArgb(45, 35, 20),
+        };
+        buttonTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 290));
+        buttonTable.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 290));
+
         StyleGuideButton(_btnOpenSergiye, "① 打开 sergiye/rdpWrapper (C# 推荐)", 290, 32);
-        _btnOpenSergiye.Location = new Point(0, y);
         _btnOpenSergiye.Click += (_, _) => OpenUrl(SergiyeReleasesUrl);
+        buttonTable.Controls.Add(_btnOpenSergiye, 0, 0);
 
         StyleGuideButton(_btnOpenSebaxakerhtc, "② 打开 sebaxakerhtc/rdpwrap (Delphi fork)", 290, 32);
-        _btnOpenSebaxakerhtc.Location = new Point(300, y);
         _btnOpenSebaxakerhtc.Click += (_, _) => OpenUrl(SebaxakerhtcRepoUrl);
+        buttonTable.Controls.Add(_btnOpenSebaxakerhtc, 1, 0);
 
-        y += 40;
         StyleGuideButton(_btnCopyVersion, "③ 复制版本号（用于搜索 rdpwrap.ini）", 290, 32);
-        _btnCopyVersion.Location = new Point(0, y);
         _btnCopyVersion.Click += (_, _) => CopyToClipboard(termsrvVer, "已复制 termsrv.dll 版本号");
+        buttonTable.Controls.Add(_btnCopyVersion, 0, 1);
 
         StyleGuideButton(_btnCopyDiagnostics, "④ 复制诊断信息（用于 GitHub 反馈）", 290, 32);
-        _btnCopyDiagnostics.Location = new Point(300, y);
         _btnCopyDiagnostics.Click += (_, _) => CopyDiagnosticsToClipboard();
+        buttonTable.Controls.Add(_btnCopyDiagnostics, 1, 1);
 
-        y += 40;
         StyleGuideButton(_btnRecheckAfterInstall, "我已安装 RDP Wrapper → 重新检查", 290, 32);
-        _btnRecheckAfterInstall.Location = new Point(0, y);
         _btnRecheckAfterInstall.BackColor = Theme.AccentGreen;
         _btnRecheckAfterInstall.ForeColor = Color.White;
         _btnRecheckAfterInstall.FlatAppearance.BorderSize = 0;
         _btnRecheckAfterInstall.Click += (_, _) => RunChecks();
+        buttonTable.Controls.Add(_btnRecheckAfterInstall, 0, 2);
+        buttonTable.SetColumnSpan(_btnRecheckAfterInstall, 2);
 
-        // Resize panel to fit content
-        _panelHomeGuide.Controls.Add(_lblHomeTitle);
-        _panelHomeGuide.Controls.Add(_lblHomeBody);
-        _panelHomeGuide.Controls.Add(_lblTermsrvVersion);
-        _panelHomeGuide.Controls.Add(_btnOpenSergiye);
-        _panelHomeGuide.Controls.Add(_btnOpenSebaxakerhtc);
-        _panelHomeGuide.Controls.Add(_btnCopyVersion);
-        _panelHomeGuide.Controls.Add(_btnCopyDiagnostics);
-        _panelHomeGuide.Controls.Add(_btnRecheckAfterInstall);
+        // Add all to flow layout
+        flow.Controls.Add(_lblHomeTitle);
+        flow.Controls.Add(_lblHomeBody);
+        flow.Controls.Add(_lblTermsrvVersion);
+        flow.Controls.Add(buttonTable);
+
+        _panelHomeGuide.Controls.Add(flow);
     }
 
     private static void StyleGuideButton(Button btn, string text, int width, int height)

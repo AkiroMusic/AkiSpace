@@ -22,9 +22,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="AkiSpace.ico" Condition="Exists('AkiSpace.ico')">
+    <Content Include="AkiSpace.ico" Condition="Exists('AkiSpace.ico')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

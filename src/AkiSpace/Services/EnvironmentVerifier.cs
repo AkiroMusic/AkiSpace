@@ -82,8 +82,8 @@ public sealed class EnvironmentVerifier
                 break;
             }
         }
+        var active = await _sessionManager.IsRdpListenerActiveAsync(ct);
         var port = _sessionManager.GetConfiguredRdpPort();
-        var active = await Task.Run(() => IsListenerActiveInternal(port), ct);
         for (var i = 0; i < results.Count; i++)
         {
             if (results[i].Name.Contains("RDP 监听"))
@@ -97,6 +97,7 @@ public sealed class EnvironmentVerifier
         return results;
     }
 
+    // Kept for backward compat (used by ApplyAllFixes in elevated mode)
     private static bool IsListenerActiveInternal(int port)
     {
         var endpoints = new[] { "127.0.0.1", "0.0.0.0" };
