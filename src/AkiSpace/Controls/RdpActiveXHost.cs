@@ -122,16 +122,14 @@ public sealed class RdpActiveXHost : AxHost
         }
     }
 
-    /// <summary>Converts a COM VARIANT_BOOL / Int16 / int / bool to bool.</summary>
-    private static bool ConvertToBool(object? value)
+    /// <summary>Converts a COM VARIANT_BOOL (Int16) — and related primitive types — to bool.</summary>
+    private static bool ConvertToBool(object? value) => value switch
     {
-        if (value is bool b) return b;
-        if (value is short s) return s != 0;    // VARIANT_BOOL: -1 = true
-        if (value is int i) return i != 0;
-        if (value is uint ui) return ui != 0;
-        if (value is byte by) return by != 0;
-        return Convert.ToInt32(value) != 0;
-    }
+        null => false,
+        bool b => b,
+        IConvertible c => c.ToInt32(null) != 0,
+        _ => false,
+    };
 
     /// <summary>
     /// Connects to a remote/child session at 127.0.0.1 with the given desktop size.
@@ -493,17 +491,6 @@ public sealed class RdpActiveXHost : AxHost
         }
     }
 
-    /// <summary>Full disconnect + reconnect cycle (needed for some setting changes).</summary>
-    public async Task ReconnectToChildSessionAsync(
-        int desktopWidth, int desktopHeight, int colorDepth, int rdpPort,
-        bool smartSizing, bool keyboardHookToRemote, bool audioRedirected,
-        CancellationToken ct = default)
-    {
-        DisconnectSession();
-        try { await Task.Delay(1200, ct); } catch (OperationCanceledException) { return; }
-        ConnectToChildSession(desktopWidth, desktopHeight, colorDepth, rdpPort, smartSizing, keyboardHookToRemote, audioRedirected);
-    }
-
     /// <summary>
     /// Finds the RDP control's hidden "Input Capture Window" child and focuses it,
     /// directing keyboard input to the remote session. Returns true on success.
@@ -561,22 +548,6 @@ public sealed class RdpActiveXHost : AxHost
             nonScriptable.SendKeys(strokes.Length, ref keyUpStates[0], ref keyData[0]);
         }
     }
-
-    /// <summary>Convenience: press Win+D in the remote session (show desktop).</summary>
-    public void SendWinD() =>
-        SendKeys(
-            (InputConstants.ScanCodeLeftWin, true, false),
-            (InputConstants.ScanCodeD, false, false),
-            (InputConstants.ScanCodeD, false, true),
-            (InputConstants.ScanCodeLeftWin, true, true));
-
-    /// <summary>Convenience: press Win+Tab in the remote session (task view).</summary>
-    public void SendWinTab() =>
-        SendKeys(
-            (InputConstants.ScanCodeLeftWin, true, false),
-            (InputConstants.ScanCodeTab, false, false),
-            (InputConstants.ScanCodeTab, false, true),
-            (InputConstants.ScanCodeLeftWin, true, true));
 
     // ---------------------------------------------------------------- internals
 

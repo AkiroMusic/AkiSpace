@@ -38,39 +38,4 @@ public static class WtsApi
         IntPtr hServer,
         uint sessionId,
         [MarshalAs(UnmanagedType.Bool)] bool bWait);
-
-    /// <summary>Enumerates sessions on the server.</summary>
-    [DllImport("wtsapi32.dll", SetLastError = true)]
-    public static extern bool WTSEnumerateSessions(
-        IntPtr hServer,
-        [MarshalAs(UnmanagedType.U4)] uint reserved,
-        [MarshalAs(UnmanagedType.U4)] uint version,
-        out IntPtr ppSessionInfo,
-        [MarshalAs(UnmanagedType.U4)] out uint pCount);
-
-    [DllImport("wtsapi32.dll", SetLastError = true)]
-    public static extern void WTSFreeMemory(IntPtr pMemory);
-
-    /// <summary>WTS_SESSION_INFO structure.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    public struct WTS_SESSION_INFO
-    {
-        public uint SessionId;
-        public IntPtr pWinStationName;  // LPWSTR
-        public WTS_CONNECTSTATE_CLASS State;
-    }
-
-    public enum WTS_CONNECTSTATE_CLASS
-    {
-        WTSActive,
-        WTSConnected,
-        WTSConnectQuery,
-        WTSShadow,
-        WTSDisconnected,
-        WTSIdle,
-        WTSListen,
-        WTSReset,
-        WTSDown,
-        WTSInit,
-    }
 }

@@ -1,4 +1,5 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using AkiSpace.Common;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
@@ -19,17 +20,26 @@ public sealed class EnvironmentVerifier
     private readonly ILogger<EnvironmentVerifier> _logger;
     private readonly ChildSessionManager _sessionManager;
 
+    // Static logger handle for the few static helpers (ReadDword/SetDword/FirewallRuleExists).
+    // Defaults to NullLogger; the first instance constructed sets the shared sink.
+    private static ILogger _sharedLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance;
+
     public EnvironmentVerifier(ILogger<EnvironmentVerifier> logger, ChildSessionManager sessionManager)
     {
         _logger = logger;
         _sessionManager = sessionManager;
+        _sharedLogger = logger;  // last-constructed wins; sufficient for this single-instance service
     }
 
-    // ---- Registry paths ----
+    private static void LogWarning(string message) => _sharedLogger.LogWarning(message);
+    private static void LogWarning(Exception ex, string message) => _sharedLogger.LogWarning(ex, message);
+    private static void LogError(Exception ex, string message) => _sharedLogger.LogError(ex, message);
 
-    private const string TerminalServerKey = @"SYSTEM\CurrentControlSet\Control\Terminal Server";
-    private const string RdpTcpKey = TerminalServerKey + @"\WinStations\RDP-Tcp";
-    private const string TermServiceParamsKey = @"SYSTEM\CurrentControlSet\Services\TermService\Parameters";
+    // ---- Registry paths (now in Common/RegistryKeys.cs) ----
+
+    private const string TerminalServerKey = RegistryKeys.TerminalServer;
+    private const string RdpTcpKey = RegistryKeys.RdpTcp;
+    private const string TermServiceParamsKey = RegistryKeys.TermServiceParameters;
 
     // ---- Checks ----
 
@@ -52,14 +62,14 @@ public sealed class EnvironmentVerifier
 
     public EnvCheckResult CheckRdpEnabled()
     {
-        var value = ReadDword(TerminalServerKey, "fDenyTSConnections");
+        var value = ReadDword(TerminalServerKey, RegistryKeys.FDenyTSConnections);
         var pass = value == 0;
         return new("RDP 已启用 (fDenyTSConnections)", pass, pass ? "fDenyTSConnections = 0" : $"fDenyTSConnections = {value}（应为 0）");
     }
 
     public EnvCheckResult CheckMultiSession()
     {
-        var value = ReadDword(TerminalServerKey, "fSingleSessionPerUser");
+        var value = ReadDword(TerminalServerKey, RegistryKeys.FSingleSessionPerUser);
         var pass = value == 0;
         return new("允许多会话 (fSingleSessionPerUser)", pass, pass ? "fSingleSessionPerUser = 0" : $"fSingleSessionPerUser = {value}（应为 0）");
     }
@@ -73,7 +83,7 @@ public sealed class EnvironmentVerifier
 
     public EnvCheckResult CheckStartRcm()
     {
-        var value = ReadDword(RdpTcpKey, "StartRCM");
+        var value = ReadDword(RdpTcpKey, RegistryKeys.StartRCM);
         var pass = value == 1;
         return new("StartRCM（家庭版修复）", pass, pass ? "StartRCM = 1" : $"StartRCM = {value}（应为 1）");
     }
@@ -138,21 +148,21 @@ public sealed class EnvironmentVerifier
             disableWrapOk ? "TermService ServiceDll 已恢复为 %SystemRoot%\\System32\\termsrv.dll" : "无需禁用或失败"));
 
         // fDenyTSConnections = 0 (enable RDP)
-        SetDword(TerminalServerKey, "fDenyTSConnections", 0);
+        SetDword(TerminalServerKey, RegistryKeys.FDenyTSConnections, 0);
         results.Add(CheckRdpEnabled());
 
         // fSingleSessionPerUser = 0 (multi-session)
-        SetDword(TerminalServerKey, "fSingleSessionPerUser", 0);
+        SetDword(TerminalServerKey, RegistryKeys.FSingleSessionPerUser, 0);
         results.Add(CheckMultiSession());
 
         // StartRCM = 1 (Home edition fix)
-        SetDword(RdpTcpKey, "StartRCM", 1);
+        SetDword(RdpTcpKey, RegistryKeys.StartRCM, 1);
         results.Add(CheckStartRcm());
 
         // Security hardening: TLS + high encryption
-        SetDword(RdpTcpKey, "SecurityLayer", 2);      // SSL/TLS
-        SetDword(RdpTcpKey, "MinEncryptionLevel", 3); // High
-        SetDword(RdpTcpKey, "UserAuthentication", 1); // NLA
+        SetDword(RdpTcpKey, RegistryKeys.SecurityLayer, 2);      // SSL/TLS
+        SetDword(RdpTcpKey, RegistryKeys.MinEncryptionLevel, 3); // High
+        SetDword(RdpTcpKey, RegistryKeys.UserAuthentication, 1); // NLA
         results.Add(new("安全加固 (SecurityLayer/MinEncryptionLevel/NLA)", true, "SecurityLayer=2, MinEncryptionLevel=3, UserAuthentication=1"));
 
         // Firewall loopback rule
@@ -185,8 +195,8 @@ public sealed class EnvironmentVerifier
     /// </summary>
     public EnvCheckResult CheckRdpWrapperHook()
     {
-        const string key = @"SYSTEM\CurrentControlSet\Services\TermService\Parameters";
-        const string valueName = "ServiceDll";
+        const string key = RegistryKeys.TermServiceParameters;
+        const string valueName = RegistryKeys.ServiceDll;
         try
         {
             using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(
@@ -223,8 +233,8 @@ public sealed class EnvironmentVerifier
     /// </summary>
     public bool DisableRdpWrapperHook()
     {
-        const string key = @"SYSTEM\CurrentControlSet\Services\TermService\Parameters";
-        const string valueName = "ServiceDll";
+        const string key = RegistryKeys.TermServiceParameters;
+        const string valueName = RegistryKeys.ServiceDll;
         var originalDll = System.IO.Path.Combine(
             Environment.SystemDirectory, "termsrv.dll");
         try
@@ -287,7 +297,7 @@ public sealed class EnvironmentVerifier
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[EnvironmentVerifier] ReadDword {keyPath}\\{name} failed: {ex.Message}");
+            LogWarning(ex, $"ReadDword {keyPath}\\{name} failed");
             return null;
         }
     }
@@ -301,7 +311,7 @@ public sealed class EnvironmentVerifier
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[EnvironmentVerifier] SetDword {keyPath}\\{name} failed: {ex.Message}");
+            LogWarning(ex, $"SetDword {keyPath}\\{name} failed");
         }
     }
 
@@ -312,6 +322,7 @@ public sealed class EnvironmentVerifier
             var psi = new ProcessStartInfo("netsh", "advfirewall firewall show rule name=\"AkiSpace RDP Loopback\"")
             {
                 RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
@@ -321,8 +332,9 @@ public sealed class EnvironmentVerifier
             p.WaitForExit(5000);
             return output.Contains("AkiSpace RDP Loopback", StringComparison.OrdinalIgnoreCase);
         }
-        catch
+        catch (Exception ex)
         {
+            LogWarning(ex, "FirewallRuleExists failed");
             return false;
         }
     }
@@ -348,7 +360,7 @@ public sealed class EnvironmentVerifier
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[EnvironmentVerifier] EnsureFirewallLoopbackRule failed: {ex.Message}");
+            LogWarning(ex, "EnsureFirewallLoopbackRule failed");
             return false;
         }
     }

@@ -65,23 +65,22 @@ void Check(string name, bool pass, string? detail = null)
     var dir = Path.Combine(Path.GetTempPath(), "AkiSpaceSelfTest_" + Guid.NewGuid().ToString("N"));
     Directory.CreateDirectory(dir);
 
-    // use the internal test constructor with an isolated directory
-    var svc = new SettingsService(dir);
-    svc.Update(s => { s.DesktopWidth = 2560; s.DesktopHeight = 1440; s.GameMouseModeEnabled = true; s.RdpPort = 3390; });
-    svc.Dispose();
+    var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance;
 
-    var svc2 = new SettingsService(dir);
+    // use the internal test constructor with an isolated directory
+    var svc = new SettingsService(nullLog, dir);
+    svc.Update(s => { s.DesktopWidth = 2560; s.DesktopHeight = 1440; s.GameMouseModeEnabled = true; s.RdpPort = 3390; });
+
+    var svc2 = new SettingsService(nullLog, dir);
     Check("Settings round-trip width", svc2.Current.DesktopWidth == 2560);
     Check("Settings round-trip height", svc2.Current.DesktopHeight == 1440);
     Check("Settings round-trip gameMouse", svc2.Current.GameMouseModeEnabled);
     Check("Settings round-trip port", svc2.Current.RdpPort == 3390);
-    svc2.Dispose();
 
     // corrupt file -> defaults
     File.WriteAllText(Path.Combine(dir, "settings.json"), "{ this is not valid json !!!");
-    var svc3 = new SettingsService(dir);
+    var svc3 = new SettingsService(nullLog, dir);
     Check("Settings corrupt-file recovery", svc3.Current.DesktopWidth == 1920, $"got {svc3.Current.DesktopWidth}");
-    svc3.Dispose();
 
     Directory.Delete(dir, true);
 }

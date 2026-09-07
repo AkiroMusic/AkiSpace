@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using AkiSpace.Common;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
 
@@ -28,19 +29,6 @@ public sealed class ChildSessionManager
             return false;
         }
         _logger.LogInformation("Child sessions enabled");
-        return true;
-    }
-
-    /// <summary>Disables Windows child sessions.</summary>
-    public bool DisableChildSessions()
-    {
-        if (!WtsApi.WTSEnableChildSessions(false))
-        {
-            var err = Marshal.GetLastWin32Error();
-            _logger.LogError("WTSEnableChildSessions(false) failed, Win32 error {Error}", err);
-            return false;
-        }
-        _logger.LogInformation("Child sessions disabled");
         return true;
     }
 
@@ -91,9 +79,8 @@ public sealed class ChildSessionManager
     {
         try
         {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp");
-            var value = key?.GetValue("PortNumber") as int?;
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(RegistryKeys.RdpTcp);
+            var value = key?.GetValue(RegistryKeys.PortNumber) as int?;
             return value is > 0 and <= 65535 ? value.Value : 3389;
         }
         catch (Exception ex)
@@ -113,9 +100,8 @@ public sealed class ChildSessionManager
     {
         try
         {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SYSTEM\CurrentControlSet\Services\TermService\Parameters");
-            var serviceDll = key?.GetValue("ServiceDll") as string;
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(RegistryKeys.TermServiceParameters);
+            var serviceDll = key?.GetValue(RegistryKeys.ServiceDll) as string;
             var found = !string.IsNullOrEmpty(serviceDll) && (
                 serviceDll.Contains("rdpwrap.dll", StringComparison.OrdinalIgnoreCase) ||
                 serviceDll.Contains("TermWrap.dll", StringComparison.OrdinalIgnoreCase));
@@ -148,39 +134,6 @@ public sealed class ChildSessionManager
             _logger.LogWarning(ex, "Failed to read termsrv.dll version");
             return "unknown";
         }
-    }
-
-    /// <summary>
-    /// Enumerates terminal sessions via WTS and returns (id, name, state) tuples.
-    /// Used for verification ("query user" equivalent) and diagnostics.
-    /// </summary>
-    public List<(uint Id, string Name, WtsApi.WTS_CONNECTSTATE_CLASS State)> EnumerateSessions()
-    {
-        var result = new List<(uint, string, WtsApi.WTS_CONNECTSTATE_CLASS)>();
-        if (!WtsApi.WTSEnumerateSessions(
-                WtsApi.WTS_CURRENT_SERVER_HANDLE, 0, 1, out var pSessionInfo, out var count))
-        {
-            _logger.LogWarning("WTSEnumerateSessions failed, Win32 error {Error}", Marshal.GetLastWin32Error());
-            return result;
-        }
-
-        try
-        {
-            var ptr = pSessionInfo;
-            for (var i = 0; i < count; i++)
-            {
-                var info = Marshal.PtrToStructure<WtsApi.WTS_SESSION_INFO>(ptr);
-                var name = Marshal.PtrToStringUni(info.pWinStationName) ?? string.Empty;
-                result.Add((info.SessionId, name, info.State));
-                ptr = IntPtr.Add(ptr, Marshal.SizeOf<WtsApi.WTS_SESSION_INFO>());
-            }
-        }
-        finally
-        {
-            WtsApi.WTSFreeMemory(pSessionInfo);
-        }
-
-        return result;
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using AkiSpace.Common;
 using AkiSpace.Services;
 using Microsoft.Extensions.Logging;
 
@@ -14,25 +15,13 @@ namespace AkiSpace.Forms;
 /// because it patches / hooks TermService's termsrv.dll.
 public sealed class SetupDialog : Form
 {
-    // Dark theme colors
-    private static readonly Color DarkBg = Color.FromArgb(30, 30, 30);
-    private static readonly Color DarkSurface = Color.FromArgb(40, 40, 40);
-    private static readonly Color DarkControl = Color.FromArgb(50, 50, 50);
-    private static readonly Color DarkBorder = Color.FromArgb(70, 70, 70);
-    private static readonly Color DarkText = Color.FromArgb(220, 220, 220);
-    private static readonly Color DarkTextDim = Color.FromArgb(150, 150, 150);
-    private static readonly Color AccentBlue = Color.FromArgb(0, 120, 215);
-    private static readonly Color AccentGreen = Color.FromArgb(0, 180, 80);
-    private static readonly Color AccentRed = Color.FromArgb(220, 50, 50);
-    private static readonly Color AccentAmber = Color.FromArgb(200, 150, 30);
+    private readonly ILogger<SetupDialog> _logger;
+    private readonly EnvironmentVerifier _verifier;
+    private readonly ChildSessionManager _sessionManager;
 
     // Known RDP Wrapper source repos
     private const string SergiyeReleasesUrl = "https://github.com/sergiye/rdpWrapper/releases";
     private const string SebaxakerhtcRepoUrl = "https://github.com/sebaxakerhtc/rdpwrap";
-
-    private readonly ILogger<SetupDialog> _logger;
-    private readonly EnvironmentVerifier _verifier;
-    private readonly ChildSessionManager _sessionManager;
 
     private readonly ListView _listView = new();
     private readonly Button _btnCheck = new();
@@ -70,16 +59,16 @@ public sealed class SetupDialog : Form
         Size = new Size(760, 640);
         MinimumSize = new Size(640, 480);
         StartPosition = FormStartPosition.CenterParent;
-        BackColor = DarkBg;
-        ForeColor = DarkText;
+        BackColor = Theme.Bg;
+        ForeColor = Theme.Text;
         Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
 
         _listView.Dock = DockStyle.Fill;
         _listView.View = View.Details;
         _listView.FullRowSelect = true;
         _listView.GridLines = true;
-        _listView.BackColor = DarkControl;
-        _listView.ForeColor = DarkText;
+        _listView.BackColor = Theme.Control;
+        _listView.ForeColor = Theme.Text;
         _listView.BorderStyle = BorderStyle.None;
         _listView.Columns.Add("检查项", 260);
         _listView.Columns.Add("状态", 90);
@@ -93,14 +82,14 @@ public sealed class SetupDialog : Form
             Dock = DockStyle.Bottom,
             Height = 100,
             Padding = new Padding(12, 8, 12, 8),
-            BackColor = DarkSurface
+            BackColor = Theme.Surface
         };
         _lblHint.Dock = DockStyle.Top;
         _lblHint.Height = 40;
         _lblHint.Text = "提示：家庭版 Windows 需要 RDP Wrapper 解锁多会话。\n" +
                         "「一键修复」会修改注册表并重启 TermService，需要管理员权限。";
-        _lblHint.ForeColor = DarkTextDim;
-        _lblHint.BackColor = DarkSurface;
+        _lblHint.ForeColor = Theme.TextDim;
+        _lblHint.BackColor = Theme.Surface;
 
         var btnRow = new FlowLayoutPanel
         {
@@ -108,28 +97,28 @@ public sealed class SetupDialog : Form
             Height = 44,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            BackColor = DarkSurface
+            BackColor = Theme.Surface
         };
         _btnCheck.Text = "重新检查";
         _btnCheck.Size = new Size(110, 36);
         _btnCheck.FlatStyle = FlatStyle.Flat;
-        _btnCheck.BackColor = DarkControl;
-        _btnCheck.ForeColor = DarkText;
-        _btnCheck.FlatAppearance.BorderColor = DarkBorder;
+        _btnCheck.BackColor = Theme.Control;
+        _btnCheck.ForeColor = Theme.Text;
+        _btnCheck.FlatAppearance.BorderColor = Theme.Border;
         _btnCheck.Click += (_, _) => RunChecks();
         _btnFix.Text = "一键修复";
         _btnFix.Size = new Size(110, 36);
         _btnFix.FlatStyle = FlatStyle.Flat;
-        _btnFix.BackColor = AccentBlue;
+        _btnFix.BackColor = Theme.AccentBlue;
         _btnFix.ForeColor = Color.White;
         _btnFix.FlatAppearance.BorderSize = 0;
         _btnFix.Click += (_, _) => RunFixes();
         _btnClose.Text = "关闭";
         _btnClose.Size = new Size(90, 36);
         _btnClose.FlatStyle = FlatStyle.Flat;
-        _btnClose.BackColor = DarkControl;
-        _btnClose.ForeColor = DarkText;
-        _btnClose.FlatAppearance.BorderColor = DarkBorder;
+        _btnClose.BackColor = Theme.Control;
+        _btnClose.ForeColor = Theme.Text;
+        _btnClose.FlatAppearance.BorderColor = Theme.Border;
         _btnClose.Click += (_, _) => Close();
         btnRow.Controls.Add(_btnClose);
         btnRow.Controls.Add(_btnFix);
@@ -159,7 +148,7 @@ public sealed class SetupDialog : Form
         // Title row
         _lblHomeTitle.Text = "⚠ 家庭版需要安装 RDP Wrapper";
         _lblHomeTitle.Font = new Font("Microsoft YaHei UI", 11f, FontStyle.Bold);
-        _lblHomeTitle.ForeColor = AccentAmber;
+        _lblHomeTitle.ForeColor = Theme.AccentAmber;
         _lblHomeTitle.AutoSize = true;
         _lblHomeTitle.Location = new Point(0, 0);
 
@@ -170,7 +159,7 @@ public sealed class SetupDialog : Form
             "③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。\n" +
             "AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。";
         _lblHomeBody.Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
-        _lblHomeBody.ForeColor = DarkText;
+        _lblHomeBody.ForeColor = Theme.Text;
         _lblHomeBody.Location = new Point(0, 28);
         _lblHomeBody.AutoSize = true;
         _lblHomeBody.MaximumSize = new Size(720, 0);
@@ -179,7 +168,7 @@ public sealed class SetupDialog : Form
         var termsrvVer = _sessionManager.GetTermsrvVersion();
         _lblTermsrvVersion.Text = $"本机 termsrv.dll 版本:  {termsrvVer}    （在 rdpwrap.ini 中需找到 [10.0.{termsrvVer.Split('.')[2]}.xxxx] 段落）";
         _lblTermsrvVersion.Font = new Font("Consolas", 9.5f, FontStyle.Bold);
-        _lblTermsrvVersion.ForeColor = AccentBlue;
+        _lblTermsrvVersion.ForeColor = Theme.AccentBlue;
         _lblTermsrvVersion.Location = new Point(0, 100);
         _lblTermsrvVersion.AutoSize = true;
 
@@ -205,7 +194,7 @@ public sealed class SetupDialog : Form
         y += 40;
         StyleGuideButton(_btnRecheckAfterInstall, "我已安装 RDP Wrapper → 重新检查", 290, 32);
         _btnRecheckAfterInstall.Location = new Point(0, y);
-        _btnRecheckAfterInstall.BackColor = AccentGreen;
+        _btnRecheckAfterInstall.BackColor = Theme.AccentGreen;
         _btnRecheckAfterInstall.ForeColor = Color.White;
         _btnRecheckAfterInstall.FlatAppearance.BorderSize = 0;
         _btnRecheckAfterInstall.Click += (_, _) => RunChecks();
@@ -246,7 +235,7 @@ public sealed class SetupDialog : Form
             var item = new ListViewItem(check.Name);
             item.SubItems.Add(check.Pass ? "✓ 通过" : "✗ 失败");
             item.SubItems.Add(check.Detail);
-            item.ForeColor = check.Pass ? AccentGreen : AccentRed;
+            item.ForeColor = check.Pass ? Theme.AccentGreen : Theme.AccentRed;
             _listView.Items.Add(item);
             if (check.Name.StartsWith("多会话解锁"))
                 wrapperInstallCheck = check;

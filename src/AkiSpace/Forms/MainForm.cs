@@ -1,5 +1,6 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
+using AkiSpace.Common;
 using AkiSpace.Controls;
 using AkiSpace.Input;
 using AkiSpace.Ipc;
@@ -117,25 +118,14 @@ public sealed class MainForm : Form
 
     // ---------------------------------------------------------------- UI construction
 
-    // Dark theme colors
-    private static readonly Color DarkBg = Color.FromArgb(30, 30, 30);
-    private static readonly Color DarkSurface = Color.FromArgb(40, 40, 40);
-    private static readonly Color DarkControl = Color.FromArgb(50, 50, 50);
-    private static readonly Color DarkBorder = Color.FromArgb(70, 70, 70);
-    private static readonly Color DarkText = Color.FromArgb(220, 220, 220);
-    private static readonly Color DarkTextDim = Color.FromArgb(150, 150, 150);
-    private static readonly Color AccentBlue = Color.FromArgb(0, 120, 215);
-    private static readonly Color AccentGreen = Color.FromArgb(0, 180, 80);
-    private static readonly Color AccentRed = Color.FromArgb(220, 50, 50);
-
     private void BuildUi()
     {
         Text = "AkiSpace — 桌面分身";
         MinimumSize = new Size(960, 600);
         Size = new Size(1280, 800);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = DarkBg;
-        ForeColor = DarkText;
+        BackColor = Theme.Bg;
+        ForeColor = Theme.Text;
         Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
 
         // --- Status bar (top) ---
@@ -144,7 +134,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Top,
             Height = 48,
             Padding = new Padding(12, 8, 12, 8),
-            BackColor = DarkSurface,
+            BackColor = Theme.Surface,
             BorderStyle = BorderStyle.None
         };
         var statusLayout = new FlowLayoutPanel
@@ -153,7 +143,7 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             Padding = new Padding(0),
-            BackColor = DarkSurface,
+            BackColor = Theme.Surface,
         };
         statusLayout.Controls.Add(MakeStatusLabel(_lblChildSession, "子会话: 检测中"));
         statusLayout.Controls.Add(MakeStatusLabel(_lblConnection, "连接: 未连接"));
@@ -167,7 +157,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Bottom,
             Height = 52,
             Padding = new Padding(8, 6, 8, 6),
-            BackColor = DarkSurface
+            BackColor = Theme.Surface
         };
         var controls = new FlowLayoutPanel
         {
@@ -175,13 +165,13 @@ public sealed class MainForm : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             Padding = new Padding(0),
-            BackColor = DarkSurface,
+            BackColor = Theme.Surface,
         };
 
         _btnConnect.Text = "连接";
         _btnConnect.Size = new Size(70, 36);
         _btnConnect.FlatStyle = FlatStyle.Flat;
-        _btnConnect.BackColor = AccentBlue;
+        _btnConnect.BackColor = Theme.AccentBlue;
         _btnConnect.ForeColor = Color.White;
         _btnConnect.FlatAppearance.BorderSize = 0;
         _btnConnect.Click += async (_, _) => await ConnectAsync();
@@ -189,53 +179,53 @@ public sealed class MainForm : Form
         _btnDisconnect.Text = "断开";
         _btnDisconnect.Size = new Size(70, 36);
         _btnDisconnect.FlatStyle = FlatStyle.Flat;
-        _btnDisconnect.BackColor = DarkControl;
-        _btnDisconnect.ForeColor = DarkText;
-        _btnDisconnect.FlatAppearance.BorderColor = DarkBorder;
+        _btnDisconnect.BackColor = Theme.Control;
+        _btnDisconnect.ForeColor = Theme.Text;
+        _btnDisconnect.FlatAppearance.BorderColor = Theme.Border;
         _btnDisconnect.Enabled = false;
         _btnDisconnect.Click += (_, _) => Disconnect();
 
         _btnTerminate.Text = "终止";
         _btnTerminate.Size = new Size(70, 36);
         _btnTerminate.FlatStyle = FlatStyle.Flat;
-        _btnTerminate.BackColor = DarkControl;
-        _btnTerminate.ForeColor = AccentRed;
-        _btnTerminate.FlatAppearance.BorderColor = DarkBorder;
+        _btnTerminate.BackColor = Theme.Control;
+        _btnTerminate.ForeColor = Theme.AccentRed;
+        _btnTerminate.FlatAppearance.BorderColor = Theme.Border;
         _btnTerminate.Enabled = false;
         _btnTerminate.Click += (_, _) => TerminateChildSession();
 
         _btnGameMouse.Text = "游戏鼠标";
         _btnGameMouse.Size = new Size(90, 36);
         _btnGameMouse.FlatStyle = FlatStyle.Flat;
-        _btnGameMouse.BackColor = DarkControl;
-        _btnGameMouse.ForeColor = DarkText;
-        _btnGameMouse.FlatAppearance.BorderColor = DarkBorder;
+        _btnGameMouse.BackColor = Theme.Control;
+        _btnGameMouse.ForeColor = Theme.Text;
+        _btnGameMouse.FlatAppearance.BorderColor = Theme.Border;
         _btnGameMouse.Enabled = false;
         _btnGameMouse.Click += (_, _) => ToggleGameMouse();
 
         _btnLaunch.Text = "启动程序";
         _btnLaunch.Size = new Size(90, 36);
         _btnLaunch.FlatStyle = FlatStyle.Flat;
-        _btnLaunch.BackColor = DarkControl;
-        _btnLaunch.ForeColor = DarkText;
-        _btnLaunch.FlatAppearance.BorderColor = DarkBorder;
+        _btnLaunch.BackColor = Theme.Control;
+        _btnLaunch.ForeColor = Theme.Text;
+        _btnLaunch.FlatAppearance.BorderColor = Theme.Border;
         _btnLaunch.Enabled = false;
         _btnLaunch.Click += (_, _) => LaunchProgramInChildSession();
 
         _btnSetup.Text = "环境检查";
         _btnSetup.Size = new Size(90, 36);
         _btnSetup.FlatStyle = FlatStyle.Flat;
-        _btnSetup.BackColor = DarkControl;
-        _btnSetup.ForeColor = DarkText;
-        _btnSetup.FlatAppearance.BorderColor = DarkBorder;
+        _btnSetup.BackColor = Theme.Control;
+        _btnSetup.ForeColor = Theme.Text;
+        _btnSetup.FlatAppearance.BorderColor = Theme.Border;
         _btnSetup.Click += (_, _) => ShowSetupDialog();
 
         _btnSettings.Text = "设置";
         _btnSettings.Size = new Size(70, 36);
         _btnSettings.FlatStyle = FlatStyle.Flat;
-        _btnSettings.BackColor = DarkControl;
-        _btnSettings.ForeColor = DarkText;
-        _btnSettings.FlatAppearance.BorderColor = DarkBorder;
+        _btnSettings.BackColor = Theme.Control;
+        _btnSettings.ForeColor = Theme.Text;
+        _btnSettings.FlatAppearance.BorderColor = Theme.Border;
         _btnSettings.Click += (_, _) => ShowSettingsDialog();
 
         controls.Controls.AddRange(new Control[] { _btnConnect, _btnDisconnect, _btnTerminate, _btnGameMouse, _btnLaunch, _btnSetup, _btnSettings });
@@ -243,12 +233,12 @@ public sealed class MainForm : Form
 
         // --- Viewer (fills remaining space) ---
         _viewerPanel.Dock = DockStyle.Fill;
-        _viewerPanel.BackColor = DarkBg;
+        _viewerPanel.BackColor = Theme.Bg;
         _viewerPanel.Padding = new Padding(0);
 
         // --- Status strip (very bottom) ---
-        _statusStrip.BackColor = DarkSurface;
-        _statusStrip.ForeColor = DarkTextDim;
+        _statusStrip.BackColor = Theme.Surface;
+        _statusStrip.ForeColor = Theme.TextDim;
         _statusStrip.Items.Add(_statusLabel);
         _statusLabel.Text = "就绪";
 
@@ -263,8 +253,8 @@ public sealed class MainForm : Form
         label.Text = text;
         label.AutoSize = true;
         label.Font = new Font("Microsoft YaHei UI", 9f, FontStyle.Regular);
-        label.ForeColor = DarkText;
-        label.BackColor = DarkSurface;
+        label.ForeColor = Theme.Text;
+        label.BackColor = Theme.Surface;
         label.Margin = new Padding(0, 0, 24, 0);
         return label;
     }

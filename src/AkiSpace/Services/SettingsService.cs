@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 
 namespace AkiSpace.Services;
 
@@ -72,9 +73,9 @@ public enum ConnectionMode
 }
 
 /// <summary>
-/// JSON settings persistence with atomic writes, thread-safe access, and change notification.
+/// JSON settings persistence with atomic writes and thread-safe access.
 /// </summary>
-public sealed class SettingsService : IDisposable
+public sealed class SettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -85,21 +86,22 @@ public sealed class SettingsService : IDisposable
 
     private readonly object _gate = new();
     private readonly string _filePath;
+    private readonly ILogger<SettingsService> _logger;
     private AppSettings _settings;
-    private bool _disposed;
 
-    public SettingsService()
-        : this(Path.Combine(
+    public SettingsService(ILogger<SettingsService> logger)
+        : this(logger, Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "AkiSpace"))
     {
     }
 
     /// <summary>Test seam: construct with an explicit base directory.</summary>
-    internal SettingsService(string baseDirectory)
+    internal SettingsService(ILogger<SettingsService> logger, string baseDirectory)
     {
         Directory.CreateDirectory(baseDirectory);
         _filePath = Path.Combine(baseDirectory, "settings.json");
+        _logger = logger;
         _settings = LoadCore();
     }
 
@@ -108,9 +110,6 @@ public sealed class SettingsService : IDisposable
     {
         get { lock (_gate) return _settings; }
     }
-
-    /// <summary>Raised after settings change (called on the updating thread).</summary>
-    public event Action<AppSettings>? Changed;
 
     /// <summary>Atomically replace the settings and persist to disk.</summary>
     public void Update(Action<AppSettings> mutate)
@@ -122,7 +121,6 @@ public sealed class SettingsService : IDisposable
             _settings = clone;
             SaveCore(clone);
         }
-        Changed?.Invoke(Current);
     }
 
     private AppSettings LoadCore()
@@ -136,7 +134,7 @@ public sealed class SettingsService : IDisposable
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
-            System.Diagnostics.Debug.WriteLine($"[SettingsService] Corrupt settings, using defaults: {ex.Message}");
+            _logger.LogWarning(ex, "Corrupt settings file at {Path}; using defaults", _filePath);
             return new AppSettings();
         }
     }
@@ -154,11 +152,5 @@ public sealed class SettingsService : IDisposable
         // JSON round-trip provides a reliable deep clone for our small settings object.
         var json = JsonSerializer.Serialize(src, JsonOptions);
         return JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
-    }
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
     }
 }

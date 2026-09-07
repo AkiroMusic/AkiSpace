@@ -1,3 +1,4 @@
+﻿using AkiSpace.Common;
 using AkiSpace.Services;
 
 namespace AkiSpace.Forms;
@@ -5,14 +6,6 @@ namespace AkiSpace.Forms;
 /// <summary>Settings dialog bound to the AppSettings model.</summary>
 public sealed class SettingsDialog : Form
 {
-    // Dark theme colors
-    private static readonly Color DarkBg = Color.FromArgb(30, 30, 30);
-    private static readonly Color DarkSurface = Color.FromArgb(40, 40, 40);
-    private static readonly Color DarkControl = Color.FromArgb(50, 50, 50);
-    private static readonly Color DarkBorder = Color.FromArgb(70, 70, 70);
-    private static readonly Color DarkText = Color.FromArgb(220, 220, 220);
-    private static readonly Color AccentBlue = Color.FromArgb(0, 120, 215);
-
     private readonly SettingsService _settingsService;
     private readonly NumericUpDown _numWidth = new();
     private readonly NumericUpDown _numHeight = new();
@@ -48,8 +41,8 @@ public sealed class SettingsDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        BackColor = DarkBg;
-        ForeColor = DarkText;
+        BackColor = Theme.Bg;
+        ForeColor = Theme.Text;
         Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Regular);
 
         var grid = new TableLayoutPanel
@@ -59,7 +52,7 @@ public sealed class SettingsDialog : Form
             ColumnCount = 2,
             RowCount = 15,
             Padding = new Padding(20, 16, 20, 8),
-            BackColor = DarkBg,
+            BackColor = Theme.Bg,
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -71,8 +64,8 @@ public sealed class SettingsDialog : Form
                 Text = label,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = DarkText,
-                BackColor = DarkBg,
+                ForeColor = Theme.Text,
+                BackColor = Theme.Bg,
             };
             grid.Controls.Add(lbl, 0, row);
             grid.Controls.Add(control, 1, row);
@@ -128,21 +121,21 @@ public sealed class SettingsDialog : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             Padding = new Padding(8),
-            BackColor = DarkSurface,
+            BackColor = Theme.Surface,
         };
         _btnOk.Text = "保存";
         _btnOk.Size = new Size(100, 36);
         _btnOk.FlatStyle = FlatStyle.Flat;
-        _btnOk.BackColor = AccentBlue;
+        _btnOk.BackColor = Theme.AccentBlue;
         _btnOk.ForeColor = Color.White;
         _btnOk.FlatAppearance.BorderSize = 0;
         _btnOk.DialogResult = DialogResult.OK;
         _btnCancel.Text = "取消";
         _btnCancel.Size = new Size(90, 36);
         _btnCancel.FlatStyle = FlatStyle.Flat;
-        _btnCancel.BackColor = DarkControl;
-        _btnCancel.ForeColor = DarkText;
-        _btnCancel.FlatAppearance.BorderColor = DarkBorder;
+        _btnCancel.BackColor = Theme.Control;
+        _btnCancel.ForeColor = Theme.Text;
+        _btnCancel.FlatAppearance.BorderColor = Theme.Border;
         _btnCancel.DialogResult = DialogResult.Cancel;
         btnRow.Controls.Add(_btnCancel);
         btnRow.Controls.Add(_btnOk);
@@ -155,28 +148,28 @@ public sealed class SettingsDialog : Form
 
     private static void StyleControl(NumericUpDown ctrl)
     {
-        ctrl.BackColor = DarkControl;
-        ctrl.ForeColor = DarkText;
+        ctrl.BackColor = Theme.Control;
+        ctrl.ForeColor = Theme.Text;
         ctrl.BorderStyle = BorderStyle.FixedSingle;
     }
 
     private static void StyleCheckbox(CheckBox ctrl)
     {
-        ctrl.BackColor = DarkBg;
-        ctrl.ForeColor = DarkText;
+        ctrl.BackColor = Theme.Bg;
+        ctrl.ForeColor = Theme.Text;
     }
 
     private static void StyleTextBox(TextBox ctrl)
     {
-        ctrl.BackColor = DarkControl;
-        ctrl.ForeColor = DarkText;
+        ctrl.BackColor = Theme.Control;
+        ctrl.ForeColor = Theme.Text;
         ctrl.BorderStyle = BorderStyle.FixedSingle;
     }
 
     private static void StyleComboBox(ComboBox ctrl)
     {
-        ctrl.BackColor = DarkControl;
-        ctrl.ForeColor = DarkText;
+        ctrl.BackColor = Theme.Control;
+        ctrl.ForeColor = Theme.Text;
         ctrl.FlatStyle = FlatStyle.Flat;
     }
 

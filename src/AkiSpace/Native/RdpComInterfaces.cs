@@ -148,15 +148,4 @@ internal static class RdpCom
         [FieldOffset(0)] public int InProcessHandle;
         [FieldOffset(0)] public int RemoteHandle;
     }
-
-    /// <summary>Disconnection reasons reported by OnDisconnected (subset).</summary>
-    public static class DisconnectReason
-    {
-        public const int RemoteDisconnectByUser = 0x0001;   // 1
-        public const int LocalNotError = 0x0005;            // 5
-        public const int ConnectionFailed = 0x0006;         // 6
-        public const int InternalError = 0x0100;            // 256
-        public const int AuthFailure = 0x0800;              // 2048
-        public const int ClientDecompressionError = 0x0804; // 2052
-    }
 }

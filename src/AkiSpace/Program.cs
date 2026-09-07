@@ -6,48 +6,49 @@ using Microsoft.Extensions.Logging;
 
 namespace AkiSpace;
 
-static class Program
-{
-    /// <summary>The main entry point for the application.</summary>
-    [STAThread]
-    static void Main(string[] args)
+    static class Program
     {
-        // --fix-env: re-launched elevated to apply environment fixes.
-        if (args.Contains("--fix-env", StringComparer.OrdinalIgnoreCase))
+        /// <summary>The main entry point for the application.</summary>
+        [STAThread]
+        static void Main(string[] args)
         {
-            RunFixMode();
-            return;
+            // --fix-env: re-launched elevated to apply environment fixes.
+            if (args.Contains("--fix-env", StringComparer.OrdinalIgnoreCase))
+            {
+                RunFixMode();
+                return;
+            }
+
+            // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
+            ApplicationConfiguration.Initialize();
+
+            var services = BuildServices();
+            using var provider = services.BuildServiceProvider();
+
+            var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("AkiSpace");
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+                logger.LogCritical(e.ExceptionObject as Exception, "AppDomain unhandled exception");
+            Application.ThreadException += (_, e) =>
+                logger.LogError(e.Exception, "UI thread exception");
+
+            try
+            {
+                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+                logger.LogInformation("AkiSpace starting (build {Version})", version);
+                Application.Run(provider.GetRequiredService<MainForm>());
+                logger.LogInformation("AkiSpace exited cleanly");
+            }
+            catch (Exception ex)
+            {
+                logger.LogCritical(ex, "Fatal startup/shutdown error");
+                MessageBox.Show(
+                    $"AkiSpace 遇到致命错误：\n{ex.Message}\n\n详细信息见日志。",
+                    "AkiSpace",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
         }
-
-        // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
-        ApplicationConfiguration.Initialize();
-
-        var services = BuildServices();
-        using var provider = services.BuildServiceProvider();
-
-        var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("AkiSpace");
-        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            logger.LogCritical(e.ExceptionObject as Exception, "AppDomain unhandled exception");
-        Application.ThreadException += (_, e) =>
-            logger.LogError(e.Exception, "UI thread exception");
-
-        try
-        {
-            logger.LogInformation("AkiSpace starting (build 0.1.0)");
-            Application.Run(provider.GetRequiredService<MainForm>());
-            logger.LogInformation("AkiSpace exited cleanly");
-        }
-        catch (Exception ex)
-        {
-            logger.LogCritical(ex, "Fatal startup/shutdown error");
-            MessageBox.Show(
-                $"AkiSpace 遇到致命错误：\n{ex.Message}\n\n详细信息见日志。",
-                "AkiSpace",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
-        }
-    }
 
     /// <summary>
     /// Elevated mode: apply environment fixes (registry, firewall, service, child sessions).
