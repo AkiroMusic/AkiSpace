@@ -9,12 +9,23 @@
     <RootNamespace>AkiSpace</RootNamespace>
     <AssemblyName>AkiSpace</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>AkiSpace.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <LangVersion>latest</LangVersion>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
+    <AssemblyTitle>AkiSpace — 桌面分身</AssemblyTitle>
+    <Product>AkiSpace</Product>
+    <Company>Akiro</Company>
+    <Copyright>Copyright (c) 2026 Akiro</Copyright>
     <Description>AkiSpace - Desktop Clone (桌面分身)</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="AkiSpace.ico" Condition="Exists('AkiSpace.ico')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
