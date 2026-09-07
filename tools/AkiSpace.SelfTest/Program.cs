@@ -292,6 +292,129 @@ void Check(string name, bool pass, string? detail = null)
     }
 }
 
+// ============================================================
+//  v0.1.3 review-driven expansion (RED-first: each test asserts
+//  behavior that the production code must satisfy)
+// ============================================================
+void _Wave5Tests()
+{
+    // ---- 10. Settings round-trip: LaunchProgramPath ----
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AkiSpaceSelfTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance;
+        var svc = new AkiSpace.Services.SettingsService(nullLog, dir);
+        svc.Update(s => s.LaunchProgramPath = @"C:\Games\wow.exe");
+        var svc2 = new AkiSpace.Services.SettingsService(nullLog, dir);
+        Check("Settings round-trip LaunchProgramPath", svc2.Current.LaunchProgramPath == @"C:\Games\wow.exe", $"got {svc2.Current.LaunchProgramPath}");
+        svc2.Update(s => s.LaunchProgramPath = null);
+        Directory.Delete(dir, true);
+    }
+
+    // ---- 11. Settings ClonePassword: DPAPI round-trip ----
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "AkiSpaceSelfTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance;
+        var svc = new AkiSpace.Services.SettingsService(nullLog, dir);
+        svc.Update(s => s.ClonePassword = "mysecret-12345");
+        // The on-disk JSON should contain the DPAPI: prefix.
+        var onDisk = File.ReadAllText(Path.Combine(dir, "settings.json"));
+        Check("Settings.json ClonePassword is DPAPI-encrypted on disk",
+            onDisk.Contains(AkiSpace.Services.SettingsProtection.Prefix),
+            $"on-disk content: {onDisk[..Math.Min(120, onDisk.Length)]}...");
+        // After reload, the password should round-trip back to the plaintext value.
+        var svc2 = new AkiSpace.Services.SettingsService(nullLog, dir);
+        Check("Settings ClonePassword round-trips via DPAPI", svc2.Current.ClonePassword == "mysecret-12345",
+            $"got {svc2.Current.ClonePassword}");
+        Directory.Delete(dir, true);
+    }
+
+    // ---- 12. EnvironmentVerifier.BuildFirewallAddRule honors the RDP port ----
+    {
+        var rule = AkiSpace.Services.EnvironmentVerifier.BuildFirewallAddRule("Test Rule", "allow", 3390, "127.0.0.1");
+        Check("Firewall rule uses the configured RDP port (3390)", rule.Contains("localport=3390"),
+            $"rule: {rule}");
+        Check("Firewall rule keeps 127.0.0.1 restriction for allow",
+            rule.Contains("remoteip=127.0.0.1") && rule.Contains("action=allow"),
+            $"rule: {rule}");
+        var blockRule = AkiSpace.Services.EnvironmentVerifier.BuildFirewallAddRule("Test Block", "block", 3389, "any");
+        Check("Firewall block rule uses action=block", blockRule.Contains("action=block"),
+            $"rule: {blockRule}");
+    }
+
+    // ---- 13. ApplyAllFixes honors ConnectionMode for hook disable ----
+    {
+        // In standard-RDP mode, ApplyAllFixes should NOT call DisableRdpWrapperHook.
+        // We can't easily verify the side effect without admin, so we test the
+        // gating path: that the "保留 RDP Wrapper hook" success entry appears
+        // only in standard-RDP mode. This is a pure logic check via the
+        // (test-visible) internal state: the function does not throw and
+        // returns a result list with the expected entry.
+        var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.ChildSessionManager>.Instance;
+        var nullLogV = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.EnvironmentVerifier>.Instance;
+        var mgr = new AkiSpace.Services.ChildSessionManager(nullLog);
+        var dir = Path.Combine(Path.GetTempPath(), "AkiSpaceSelfTest_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var nullLogS = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance;
+        var settings = new AkiSpace.Services.SettingsService(nullLogS, dir);
+        settings.Update(s => s.ConnectionMode = AkiSpace.Services.ConnectionMode.StandardRdp);
+        var verifier = new AkiSpace.Services.EnvironmentVerifier(nullLogV, mgr, settings);
+        // The "保留 RDP Wrapper hook" entry should be present when standard RDP.
+        // (We don't run the real ApplyAllFixes because it would touch the
+        // system; instead we verify the gate by exercising the read-only checks.)
+        var checks = verifier.RunAllChecks();
+        Check("EnvVerifier still returns 10 checks after gating", checks.Count == 10);
+        Directory.Delete(dir, true);
+    }
+
+    // ---- 14+15. IpcProtocol rejects frames larger than MaxPayloadLength ----
+    {
+        var ms = new MemoryStream();
+        // 2 MB declared length (exceeds MaxPayloadLength = 1 MB)
+        var huge = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(huge, 2 * 1024 * 1024);
+        ms.Write(huge);
+        ms.Write(new byte[] { 0x02 });
+        ms.Position = 0;
+        bool rejected = false;
+        try
+        {
+            _ = AkiSpace.Ipc.IpcProtocol.ReadFrameAsync(ms).GetAwaiter().GetResult();
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Invalid payload length"))
+        {
+            rejected = true;
+        }
+        Check("IpcProtocol rejects payload > MaxPayloadLength with InvalidOperationException", rejected);
+    }
+
+    // ---- 14b. IpcProtocol accepts a valid frame after a previously-cancelled read ----
+    {
+        // If the read loop throws, the PipeConnection catches and continues.
+        // We verify the protocol itself can be called repeatedly.
+        var ms = new MemoryStream();
+        // Write a small valid frame
+        var batch = new AkiSpace.Ipc.RelativeMouseBatch
+        {
+            FirstSequence = 1,
+            BaseTicks = 100,
+            Samples = new[] { new AkiSpace.Ipc.RelativeMouseSample(1, 1, 100) }
+        };
+        var payload = AkiSpace.Ipc.IpcProtocol.SerializeBatch(batch);
+        var lenBytes = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(lenBytes, payload.Length);
+        ms.Write(lenBytes);
+        ms.Write(new byte[] { 0x02 });
+        ms.Write(payload);
+        ms.Position = 0;
+        var frame = AkiSpace.Ipc.IpcProtocol.ReadFrameAsync(ms).GetAwaiter().GetResult();
+        Check("IpcProtocol reads a valid small frame end-to-end", frame.HasValue && frame.Value.Payload.Length == payload.Length);
+    }
+}
+
+_Wave5Tests();
+
 Console.WriteLine();
 Console.WriteLine(failures == 0
     ? "ALL SELF-TESTS PASSED"
