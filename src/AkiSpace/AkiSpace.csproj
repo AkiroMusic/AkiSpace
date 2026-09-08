@@ -13,7 +13,7 @@
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <LangVersion>latest</LangVersion>
-    <Version>0.1.3</Version>
+    <Version>0.1.5</Version>
     <AssemblyTitle>AkiSpace — 桌面分身</AssemblyTitle>
     <Product>AkiSpace</Product>
     <Company>Akiro</Company>
