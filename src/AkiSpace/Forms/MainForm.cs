@@ -1,9 +1,7 @@
 ﻿using System.Diagnostics;
-using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using AkiSpace.Common;
 using AkiSpace.Controls;
-using AkiSpace.Controls.Styled;
 using AkiSpace.Input;
 using AkiSpace.Ipc;
 using AkiSpace.Native;
@@ -13,13 +11,10 @@ using Microsoft.Extensions.Logging;
 namespace AkiSpace.Forms;
 
 /// <summary>
-/// AkiSpace main window - Ethereal Glass design:
-/// Glass titlebar (40px) + Nav rail (80px) + Main content (cards) + Glass footer (28px)
-/// Ambient background + noise overlay throughout.
+/// AkiSpace main window — dark theme, standard WinForms controls.
 /// </summary>
 public sealed class MainForm : Form
 {
-    // Win32 P/Invoke for global hotkeys
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
@@ -45,59 +40,43 @@ public sealed class MainForm : Form
     private readonly MouseForwarder _mouseForwarder;
     private readonly AgentRunner _agentRunner;
     private readonly PipeServer _pipeServer;
+    private byte[]? _agentNonce;
 
-    // UI - New Ethereal Glass layout
-    private readonly AmbientBackground _ambientBg = new();
-    private readonly NoiseOverlay _noiseOverlay = new();
-    private readonly GlassSurface _titleBar = new();
-    private readonly GlassSurface _footer = new();
-    private readonly NavigationRail _navRail = new();
-    private readonly Panel _mainContent = new();
-    private readonly Panel _scrollableContent = new();
-    private readonly FlowLayoutPanel _cardsContainer = new();
-
-    // Titlebar elements
-    private readonly Label _titleLabel = new();
-    private readonly Button _btnMinimize = new();
-    private readonly Button _btnClose = new();
-    private readonly Button _btnThemeCycle = new();
-
-    // Footer elements
-    private readonly Label _footerCopyright = new();
-    private readonly LinkLabel _footerLink = new();
-
-    // Status cards (in main content)
-    private readonly DoubleBezelCard _statusCard = new();
+    // UI — standard controls
     private readonly Label _lblChildSession = new();
     private readonly Label _lblConnection = new();
     private readonly Label _lblWrapper = new();
     private readonly Label _lblPerformance = new();
-
-    // Control card
-    private readonly DoubleBezelCard _controlCard = new();
-    private Panel _viewerPanel = new(); // RDP viewer panel
-    private readonly PrimaryButton _btnConnect = new();
-    private readonly GhostButton _btnDisconnect = new();
-    private readonly GhostButton _btnTerminate = new();
-    private readonly GhostButton _btnGameMouse = new();
-    private readonly PrimaryButton _btnLaunch = new();
-    private readonly GhostButton _btnSetup = new();
-    private readonly GhostButton _btnSettings = new();
+    private readonly Button _btnConnect = new();
+    private readonly Button _btnDisconnect = new();
+    private readonly Button _btnTerminate = new();
+    private readonly Button _btnGameMouse = new();
+    private readonly Button _btnLaunch = new();
+    private readonly Button _btnSetup = new();
+    private readonly Button _btnSettings = new();
+    private readonly Panel _viewerPanel = new();
+    private readonly StatusStrip _statusStrip = new();
+    private readonly ToolStripStatusLabel _statusLabel = new();
 
     // System tray
     private readonly NotifyIcon _trayIcon;
     private readonly ContextMenuStrip _trayMenu;
 
-    // RDP
     private RdpActiveXHost? _rdpHost;
     private System.Windows.Forms.Timer? _statusTimer;
     private bool _closing;
     private bool _isConnected;
-    private bool _isFullscreen = false;
-    private byte[]? _agentNonce;
+    private bool _isFullscreen;
 
     private string _cloneUsername => _settingsService.Current.CloneUsername;
     private string _clonePassword => _settingsService.Current.ClonePassword;
+
+    // Dark theme colors
+    private static readonly Color BgDark = Color.FromArgb(24, 24, 27);
+    private static readonly Color SurfaceDark = Color.FromArgb(38, 38, 42);
+    private static readonly Color AccentDark = Color.FromArgb(99, 102, 241);
+    private static readonly Color TextDark = Color.FromArgb(228, 228, 231);
+    private static readonly Color TextSubtleDark = Color.FromArgb(161, 161, 170);
 
     public MainForm(
         ILoggerFactory loggerFactory,
@@ -123,7 +102,6 @@ public sealed class MainForm : Form
 
         // System tray
         _trayMenu = new ContextMenuStrip();
-        _trayMenu.Renderer = new ToolStripProfessionalRenderer(new TrayColorTable());
         _trayMenu.Items.Add("连接分身", null, (_, _) => ToggleConnect());
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("显示主窗口", null, (_, _) => ShowMainWindow());
@@ -142,7 +120,6 @@ public sealed class MainForm : Form
         BuildUi();
         Load += OnLoad;
         FormClosing += OnFormClosing;
-        ThemeManager.Current.ThemeChanged += OnThemeChanged;
     }
 
     // ---------------------------------------------------------------- UI Construction
@@ -153,381 +130,143 @@ public sealed class MainForm : Form
         MinimumSize = new Size(960, 600);
         Size = new Size(1280, 800);
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = ThemeManager.Current.BgBase;
-        ForeColor = ThemeManager.Current.TextPrimary;
-        Font = ThemeManager.Current.GetFontSans(13f);
-        FormBorderStyle = FormBorderStyle.None; // Custom titlebar
+        BackColor = BgDark;
+        ForeColor = TextDark;
+        Font = new Font("Segoe UI", 9f);
+        FormBorderStyle = FormBorderStyle.Sizable;
 
-        // Layer 0: Ambient background (z-index -1 equivalent)
-        Controls.Add(_ambientBg);
-
-        // Layer 1: Noise overlay (z-index 0)
-        Controls.Add(_noiseOverlay);
-
-        // Layer 2: Titlebar (40px, glass)
-        BuildTitleBar();
-        Controls.Add(_titleBar);
-
-        // Layer 3: Main layout (Nav rail + Content)
-        var mainLayout = new Panel
+        // Status strip at bottom
+        _statusStrip.BackColor = SurfaceDark;
+        _statusStrip.ForeColor = TextSubtleDark;
+        _statusStrip.SizingGrip = false;
+        _statusLabel.Text = "就绪";
+        _statusStrip.Items.Add(_statusLabel);
+        _statusStrip.Items.Add(new ToolStripStatusLabel("GitHub: AkiroMusic/AkiSpace")
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(0, 40, 0, 28), // Titlebar 40px, Footer 28px
-            BackColor = Color.Transparent,
-        };
-        BuildNavRail();
-        BuildMainContent();
-        mainLayout.Controls.Add(_mainContent);
-        mainLayout.Controls.Add(_navRail);
-        Controls.Add(mainLayout);
+            IsLink = true,
+            LinkColor = AccentDark,
+            ActiveLinkColor = Color.FromArgb(129, 140, 248),
+        });
+        ((ToolStripStatusLabel)_statusStrip.Items[1]).Click += (_, _) =>
+            Process.Start(new ProcessStartInfo("https://github.com/AkiroMusic/AkiSpace") { UseShellExecute = true });
 
-        // Layer 4: Footer (28px, glass)
-        BuildFooter();
-        Controls.Add(_footer);
-
-        // Bring titlebar and footer to front
-        _titleBar.BringToFront();
-        _footer.BringToFront();
-
-        // Subscribe to theme changes for titlebar/footer
-        ThemeManager.Current.ThemeChanged += (_, _) =>
+        // Top panel: buttons
+        var buttonPanel = new FlowLayoutPanel
         {
-            _titleBar.Invalidate();
-            _footer.Invalidate();
-            _navRail.Invalidate();
-            Invalidate();
-        };
-    }
-
-    private void BuildTitleBar()
-    {
-        _titleBar.Height = 40;
-        _titleBar.Dock = DockStyle.Top;
-        _titleBar.Padding = new Padding(16, 0, 16, 0);
-
-        var layout = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
-            BackColor = Color.Transparent,
-            Padding = new Padding(0),
-        };
-
-        // Title
-        _titleLabel.Text = "AkiSpace";
-        _titleLabel.AutoSize = true;
-        _titleLabel.Font = ThemeManager.Current.GetFontDisplay(16f, FontStyle.Bold);
-        _titleLabel.ForeColor = ThemeManager.Current.TextPrimary;
-        _titleLabel.Margin = new Padding(0, 8, 0, 0);
-        _titleLabel.BackColor = Color.Transparent;
-
-        // Spacer
-        var spacer = new Panel { Width = 1, Dock = DockStyle.Fill, BackColor = Color.Transparent };
-        spacer.MinimumSize = new Size(100, 1);
-
-        // Theme cycle button
-        _btnThemeCycle.Size = new Size(32, 32);
-        _btnThemeCycle.FlatStyle = FlatStyle.Flat;
-        _btnThemeCycle.FlatAppearance.BorderSize = 0;
-        _btnThemeCycle.BackColor = Color.Transparent;
-        _btnThemeCycle.Cursor = Cursors.Hand;
-        _btnThemeCycle.Margin = new Padding(8, 4, 0, 0);
-        var themeToolTip = new ToolTip();
-        themeToolTip.SetToolTip(_btnThemeCycle, "切换主题");
-        _btnThemeCycle.Paint += (_, e) =>
-        {
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var pen = new Pen(ThemeManager.Current.TextSecondary, 1.7f);
-            var cx = 16; var cy = 16; var r = 10;
-            g.DrawEllipse(pen, cx - r, cy - r, r * 2, r * 2);
-            g.DrawLine(pen, cx, cy - r, cx, cy - r * 0.3f);
-            g.DrawLine(pen, cx, cy + r, cx, cy + r * 0.3f);
-            g.DrawLine(pen, cx - r, cy, cx - r * 0.3f, cy);
-            g.DrawLine(pen, cx + r, cy, cx + r * 0.3f, cy);
-        };
-        _btnThemeCycle.Click += (_, _) => ThemeManager.Current.CycleTheme();
-        _btnThemeCycle.MouseEnter += (_, _) => _btnThemeCycle.Invalidate();
-        _btnThemeCycle.MouseLeave += (_, _) => _btnThemeCycle.Invalidate();
-
-        // Minimize button
-        _btnMinimize.Size = new Size(32, 32);
-        _btnMinimize.FlatStyle = FlatStyle.Flat;
-        _btnMinimize.FlatAppearance.BorderSize = 0;
-        _btnMinimize.BackColor = Color.Transparent;
-        _btnMinimize.Cursor = Cursors.Hand;
-        _btnMinimize.Margin = new Padding(8, 4, 0, 0);
-        _btnMinimize.Paint += (_, e) =>
-        {
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var pen = new Pen(_btnMinimize.BackColor.A > 0 ? ThemeManager.Current.Accent : ThemeManager.Current.TextSecondary, 1.7f);
-            g.DrawLine(pen, 8, 16, 24, 16);
-        };
-        _btnMinimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
-        _btnMinimize.MouseEnter += (_, _) => { _btnMinimize.BackColor = Color.FromArgb(30, ThemeManager.Current.TextPrimary); _btnMinimize.Invalidate(); };
-        _btnMinimize.MouseLeave += (_, _) => { _btnMinimize.BackColor = Color.Transparent; _btnMinimize.Invalidate(); };
-
-        // Close button
-        _btnClose.Size = new Size(32, 32);
-        _btnClose.FlatStyle = FlatStyle.Flat;
-        _btnClose.FlatAppearance.BorderSize = 0;
-        _btnClose.BackColor = Color.Transparent;
-        _btnClose.Cursor = Cursors.Hand;
-        _btnClose.Margin = new Padding(8, 4, 0, 0);
-        _btnClose.Paint += (_, e) =>
-        {
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            var color = _btnClose.BackColor.A > 0 ? Color.White : ThemeManager.Current.TextSecondary;
-            using var pen = new Pen(color, 1.7f);
-            g.DrawLine(pen, 10, 10, 22, 22);
-            g.DrawLine(pen, 22, 10, 10, 22);
-        };
-        _btnClose.Click += (_, _) => ExitApplication();
-        _btnClose.MouseEnter += (_, _) => { _btnClose.BackColor = Color.FromArgb(200, 232, 17, 35); _btnClose.Invalidate(); }; // #e81123
-        _btnClose.MouseLeave += (_, _) => { _btnClose.BackColor = Color.Transparent; _btnClose.Invalidate(); };
-
-        // Enable drag to move window
-        _titleBar.MouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                User32.ReleaseCapture();
-                User32.SendMessage(Handle, User32.WM_NCLBUTTONDOWN, (IntPtr)User32.HTCAPTION, IntPtr.Zero);
-            }
-        };
-        _titleLabel.MouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                User32.ReleaseCapture();
-                User32.SendMessage(Handle, User32.WM_NCLBUTTONDOWN, (IntPtr)User32.HTCAPTION, IntPtr.Zero);
-            }
-        };
-
-        layout.Controls.Add(_titleLabel);
-        layout.Controls.Add(spacer);
-        layout.Controls.Add(_btnThemeCycle);
-        layout.Controls.Add(_btnMinimize);
-        layout.Controls.Add(_btnClose);
-        _titleBar.Controls.Add(layout);
-    }
-
-    private void BuildNavRail()
-    {
-        _navRail.AddItem("main", "monitor", "概览", () => { /* Already on main */ });
-        _navRail.AddItem("settings", "settings", "设置", () => ShowSettingsDialog());
-        _navRail.AddItem("settings", "plug", "环境检查", () => ShowSetupDialog());
-    }
-
-    private void BuildMainContent()
-    {
-        _mainContent.Dock = DockStyle.Fill;
-        _mainContent.BackColor = Color.Transparent;
-        _mainContent.Padding = new Padding(ThemeTokens.Space.S8, ThemeTokens.Space.S8, ThemeTokens.Space.S6, ThemeTokens.Space.S6); // 32, 32, 24, 24
-
-        _scrollableContent.Dock = DockStyle.Fill;
-        _scrollableContent.AutoScroll = true;
-        _scrollableContent.BackColor = Color.Transparent;
-
-        _cardsContainer.Dock = DockStyle.Top;
-        _cardsContainer.FlowDirection = FlowDirection.TopDown;
-        _cardsContainer.WrapContents = false;
-        _cardsContainer.AutoSize = true;
-        _cardsContainer.BackColor = Color.Transparent;
-        _cardsContainer.Padding = new Padding(0);
-
-        _scrollableContent.Controls.Add(_cardsContainer);
-        _mainContent.Controls.Add(_scrollableContent);
-
-        // Status Card
-        BuildStatusCard();
-        _cardsContainer.Controls.Add(_statusCard);
-
-        // Viewer Card (RDP)
-        var viewerCard = new DoubleBezelCard
-        {
-            Title = "分身桌面",
-            Subtitle = "RDP 内嵌查看器",
-            Height = 480,
-            Dock = DockStyle.Top,
-        };
-        viewerCard.ContentControls.Add(_viewerPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = ThemeManager.Current.BgBase,
-            Padding = new Padding(0),
-        });
-        _cardsContainer.Controls.Add(viewerCard);
-
-        // Control Card
-        BuildControlCard();
-        _cardsContainer.Controls.Add(_controlCard);
-    }
-
-    private void BuildStatusCard()
-    {
-        _statusCard.Title = "连接状态";
-        _statusCard.Subtitle = "实时监控分身会话状态";
-        _statusCard.HeaderAction = CreateRefreshButton();
-
-        var grid = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 4,
-            RowCount = 1,
             AutoSize = true,
-            BackColor = Color.Transparent,
-        };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
-
-        var labels = new[] { _lblChildSession, _lblConnection, _lblWrapper, _lblPerformance };
-        var texts = new[] { "子会话: 检测中", "连接: 未连接", "RDP 解锁: 检测中", "CPU: 0% | 内存: 0 MB" };
-
-        for (int i = 0; i < 4; i++)
-        {
-            var panel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(0, 0, ThemeTokens.Space.S4, 0) };
-            labels[i].Text = texts[i];
-            labels[i].AutoSize = true;
-            labels[i].Font = ThemeManager.Current.GetFontSans(13f);
-            labels[i].ForeColor = ThemeManager.Current.TextPrimary;
-            labels[i].BackColor = Color.Transparent;
-            labels[i].Dock = DockStyle.Top;
-            panel.Controls.Add(labels[i]);
-            grid.Controls.Add(panel, i, 0);
-        }
-
-        _statusCard.ContentControls.Add(grid);
-    }
-
-    private Button CreateRefreshButton()
-    {
-        var btn = new Button
-        {
-            Size = new Size(28, 28),
-            FlatStyle = FlatStyle.Flat,
-            FlatAppearance = { BorderSize = 0 },
-            BackColor = Color.Transparent,
-            Cursor = Cursors.Hand,
-        };
-        btn.Paint += (_, e) =>
-        {
-            var g = e.Graphics;
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var pen = new Pen(ThemeManager.Current.TextTertiary, 1.7f);
-            var cx = 14; var cy = 14; var r = 8;
-            g.DrawArc(pen, cx - r, cy - r, r * 2, r * 2, -90, 270);
-            g.DrawLine(pen, cx + r * 0.7f, cy - r * 0.7f, cx + r, cy - r);
-            g.DrawLine(pen, cx + r, cy - r, cx + r * 0.7f, cy - r * 1.3f);
-        };
-        btn.MouseEnter += (_, _) => { btn.Invalidate(); };
-        btn.MouseLeave += (_, _) => { btn.Invalidate(); };
-        btn.Click += (_, _) => RefreshStatus();
-        return btn;
-    }
-
-    private void BuildControlCard()
-    {
-        _controlCard.Title = "控制面板";
-        _controlCard.Subtitle = "连接管理与操作";
-
-        var flow = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            AutoSize = true,
-            BackColor = Color.Transparent,
-            Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
+            Padding = new Padding(12, 8, 12, 8),
+            BackColor = SurfaceDark,
+            Height = 52,
         };
 
-        // Primary: Connect
+        // Buttons
         _btnConnect.Text = "连接";
-        _btnConnect.Size = new Size(100, 40);
+        _btnConnect.Size = new Size(90, 36);
+        _btnConnect.FlatStyle = FlatStyle.Flat;
+        _btnConnect.BackColor = AccentDark;
+        _btnConnect.ForeColor = Color.White;
+        _btnConnect.Cursor = Cursors.Hand;
         _btnConnect.Click += async (_, _) => await ConnectAsync();
 
-        // Ghost: Disconnect
         _btnDisconnect.Text = "断开";
-        _btnDisconnect.Size = new Size(100, 40);
+        _btnDisconnect.Size = new Size(90, 36);
+        _btnDisconnect.FlatStyle = FlatStyle.Flat;
+        _btnDisconnect.BackColor = SurfaceDark;
+        _btnDisconnect.ForeColor = TextDark;
+        _btnDisconnect.Cursor = Cursors.Hand;
         _btnDisconnect.Enabled = false;
         _btnDisconnect.Click += (_, _) => Disconnect();
 
-        // Ghost: Terminate
         _btnTerminate.Text = "终止";
-        _btnTerminate.Size = new Size(100, 40);
+        _btnTerminate.Size = new Size(90, 36);
+        _btnTerminate.FlatStyle = FlatStyle.Flat;
+        _btnTerminate.BackColor = SurfaceDark;
+        _btnTerminate.ForeColor = TextDark;
+        _btnTerminate.Cursor = Cursors.Hand;
         _btnTerminate.Enabled = false;
         _btnTerminate.Click += (_, _) => TerminateChildSession();
 
-        // Ghost: Game Mouse (shown only in standard RDP)
         _btnGameMouse.Text = "游戏鼠标";
-        _btnGameMouse.Size = new Size(120, 40);
+        _btnGameMouse.Size = new Size(100, 36);
+        _btnGameMouse.FlatStyle = FlatStyle.Flat;
+        _btnGameMouse.BackColor = SurfaceDark;
+        _btnGameMouse.ForeColor = TextDark;
+        _btnGameMouse.Cursor = Cursors.Hand;
         _btnGameMouse.Enabled = false;
         _btnGameMouse.Visible = false;
         _btnGameMouse.Click += (_, _) => ToggleGameMouse();
 
-        // Primary: Launch Program
         _btnLaunch.Text = "启动程序";
-        _btnLaunch.Size = new Size(120, 40);
+        _btnLaunch.Size = new Size(100, 36);
+        _btnLaunch.FlatStyle = FlatStyle.Flat;
+        _btnLaunch.BackColor = SurfaceDark;
+        _btnLaunch.ForeColor = TextDark;
+        _btnLaunch.Cursor = Cursors.Hand;
         _btnLaunch.Enabled = false;
         _btnLaunch.Click += (_, _) => LaunchProgramInChildSession();
 
-        // Ghost: Setup
         _btnSetup.Text = "环境检查";
-        _btnSetup.Size = new Size(120, 40);
+        _btnSetup.Size = new Size(100, 36);
+        _btnSetup.FlatStyle = FlatStyle.Flat;
+        _btnSetup.BackColor = SurfaceDark;
+        _btnSetup.ForeColor = TextDark;
+        _btnSetup.Cursor = Cursors.Hand;
         _btnSetup.Click += (_, _) => ShowSetupDialog();
 
-        // Ghost: Settings
         _btnSettings.Text = "设置";
-        _btnSettings.Size = new Size(100, 40);
+        _btnSettings.Size = new Size(80, 36);
+        _btnSettings.FlatStyle = FlatStyle.Flat;
+        _btnSettings.BackColor = SurfaceDark;
+        _btnSettings.ForeColor = TextDark;
+        _btnSettings.Cursor = Cursors.Hand;
         _btnSettings.Click += (_, _) => ShowSettingsDialog();
 
-        flow.Controls.AddRange(new Control[] { _btnConnect, _btnDisconnect, _btnTerminate, _btnGameMouse, _btnLaunch, _btnSetup, _btnSettings });
-        _controlCard.ContentControls.Add(flow);
-    }
+        buttonPanel.Controls.AddRange(new Control[] {
+            _btnConnect, _btnDisconnect, _btnTerminate,
+            _btnGameMouse, _btnLaunch, _btnSetup, _btnSettings,
+        });
 
-    private void BuildFooter()
-    {
-        _footer.Height = 28;
-        _footer.Dock = DockStyle.Bottom;
-        _footer.Padding = new Padding(16, 0, 16, 0);
-
-        var layout = new FlowLayoutPanel
+        // Status labels panel
+        var statusPanel = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            BackColor = Color.Transparent,
+            Dock = DockStyle.Top,
+            ColumnCount = 4,
+            RowCount = 1,
+            Height = 32,
+            Padding = new Padding(12, 4, 12, 4),
+            BackColor = BgDark,
         };
+        statusPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        statusPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        statusPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+        statusPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
 
-        _footerCopyright.Text = "© 2026 Akiro";
-        _footerCopyright.AutoSize = true;
-        _footerCopyright.Font = ThemeManager.Current.GetFontSans(11f);
-        _footerCopyright.ForeColor = ThemeManager.Current.TextTertiary;
-        _footerCopyright.BackColor = Color.Transparent;
-        _footerCopyright.Margin = new Padding(0, 6, 0, 0);
+        var labels = new[] { _lblChildSession, _lblConnection, _lblWrapper, _lblPerformance };
+        var texts = new[] { "子会话: 检测中", "连接: 未连接", "RDP 解锁: 检测中", "CPU: 0% | 内存: 0 MB" };
+        for (int i = 0; i < 4; i++)
+        {
+            labels[i].Text = texts[i];
+            labels[i].AutoSize = true;
+            labels[i].Font = new Font("Segoe UI", 8.5f);
+            labels[i].ForeColor = TextSubtleDark;
+            labels[i].BackColor = BgDark;
+            labels[i].Dock = DockStyle.Top;
+            statusPanel.Controls.Add(labels[i], i, 0);
+        }
 
-        var spacer = new Panel { Width = 1, Dock = DockStyle.Fill, BackColor = Color.Transparent };
-        spacer.MinimumSize = new Size(100, 1);
+        // Viewer panel (RDP host goes here)
+        _viewerPanel.Dock = DockStyle.Fill;
+        _viewerPanel.BackColor = Color.Black;
+        _viewerPanel.Padding = new Padding(2);
 
-        _footerLink.Text = "GitHub";
-        _footerLink.AutoSize = true;
-        _footerLink.Font = ThemeManager.Current.GetFontSans(11f);
-        _footerLink.LinkColor = ThemeManager.Current.Accent;
-        _footerLink.ActiveLinkColor = ThemeManager.Current.AccentHover;
-        _footerLink.VisitedLinkColor = ThemeManager.Current.AccentSecondary;
-        _footerLink.BackColor = Color.Transparent;
-        _footerLink.Margin = new Padding(0, 6, 0, 0);
-        _footerLink.Click += (_, _) => Process.Start(new ProcessStartInfo("https://github.com/akiro") { UseShellExecute = true });
-
-        layout.Controls.Add(_footerCopyright);
-        layout.Controls.Add(spacer);
-        layout.Controls.Add(_footerLink);
-        _footer.Controls.Add(layout);
+        // Layout: buttonPanel (top) + statusPanel (top) + viewerPanel (fill) + statusStrip (bottom)
+        Controls.Add(_viewerPanel);
+        Controls.Add(statusPanel);
+        Controls.Add(buttonPanel);
+        Controls.Add(_statusStrip);
     }
 
     // ---------------------------------------------------------------- Lifecycle
@@ -536,7 +275,6 @@ public sealed class MainForm : Form
     {
         _logger.LogInformation("MainForm loaded");
 
-        // Apply dark title bar for custom titlebar
         try
         {
             int value = 1;
@@ -576,39 +314,11 @@ public sealed class MainForm : Form
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
 
-        ThemeManager.Current.ThemeChanged -= OnThemeChanged;
-
         if (_settingsService.Current.LogoffOnExit && _sessionManager.TryGetChildSessionId() is uint sid)
         {
             _sessionManager.LogoffChildSession(sid);
         }
         _logger.LogInformation("MainForm closing");
-    }
-
-    private void OnThemeChanged(object? sender, string themeName)
-    {
-        // Refresh all custom controls
-        BackColor = ThemeManager.Current.BgBase;
-        ForeColor = ThemeManager.Current.TextPrimary;
-        Font = ThemeManager.Current.GetFontSans(13f);
-
-        _titleBar.Invalidate();
-        _footer.Invalidate();
-        _navRail.Invalidate();
-        _statusCard.Invalidate();
-        _controlCard.Invalidate();
-
-        // Update status labels fonts/colors
-        foreach (var lbl in new[] { _lblChildSession, _lblConnection, _lblWrapper, _lblPerformance, _titleLabel, _footerCopyright })
-        {
-            lbl.Font = ThemeManager.Current.GetFontSans(lbl.Font.Size);
-            lbl.ForeColor = ThemeManager.Current.TextPrimary;
-        }
-        _footerLink.LinkColor = ThemeManager.Current.Accent;
-        _footerLink.ActiveLinkColor = ThemeManager.Current.AccentHover;
-        _footerLink.VisitedLinkColor = ThemeManager.Current.AccentSecondary;
-
-        Invalidate();
     }
 
     // ---------------------------------------------------------------- Global Hotkeys
@@ -902,9 +612,6 @@ public sealed class MainForm : Form
         _settingsService.Update(s => s.GameMouseModeEnabled = !enabled);
     }
 
-    /// <summary>
-    /// Arms the pipe server with a nonce and launches the agent in the child session.
-    /// </summary>
     private void LaunchAgentInChildSession()
     {
         try
@@ -1005,7 +712,6 @@ public sealed class MainForm : Form
 
         BeginInvoke(() => _rdpHost?.TryFocusRdpInputWindow());
 
-        // Launch the agent in the child session for mouse replay.
         if (_settingsService.Current.ConnectionMode != ConnectionMode.ChildSession)
         {
             LaunchAgentInChildSession();
@@ -1072,7 +778,7 @@ public sealed class MainForm : Form
         _isFullscreen = false;
         BeginInvoke(() =>
         {
-            FormBorderStyle = FormBorderStyle.None;
+            FormBorderStyle = FormBorderStyle.Sizable;
             WindowState = FormWindowState.Normal;
         });
     }
@@ -1134,22 +840,5 @@ public sealed class MainForm : Form
         if (_rdpHost == null || !_rdpHost.IsHandleCreated)
             return false;
         return _rdpHost.IsRdpInputWindowFocused();
-    }
-
-    // ---------------------------------------------------------------- Tray Color Table
-
-    private sealed class TrayColorTable : ProfessionalColorTable
-    {
-        public override Color MenuBorder => ThemeManager.Current.Border;
-        public override Color MenuItemBorder => ThemeManager.Current.Border;
-        public override Color MenuItemSelected => Color.FromArgb(33, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B);
-        public override Color MenuItemSelectedGradientBegin => Color.FromArgb(33, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B);
-        public override Color MenuItemSelectedGradientEnd => Color.FromArgb(33, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B);
-        public override Color MenuItemPressedGradientBegin => ThemeManager.Current.Accent;
-        public override Color MenuItemPressedGradientEnd => ThemeManager.Current.Accent;
-        public override Color ToolStripDropDownBackground => ThemeManager.Current.Surface1;
-        public override Color ImageMarginGradientBegin => ThemeManager.Current.Surface1;
-        public override Color ImageMarginGradientEnd => ThemeManager.Current.Surface1;
-        public override Color ImageMarginGradientMiddle => ThemeManager.Current.Surface1;
     }
 }
