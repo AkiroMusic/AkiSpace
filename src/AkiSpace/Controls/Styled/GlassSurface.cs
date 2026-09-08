@@ -40,7 +40,7 @@ public sealed class GlassSurface : Panel
 
         // Draw rounded background
         var radius = ThemeManager.Current.Radius("sm");
-        using var path = GetRoundedRect(rect, radius);
+        using var path = DrawHelpers.GetRoundedRect(rect, radius);
         g.FillPath(brush, path);
         g.DrawPath(pen, path);
     }
@@ -87,17 +87,5 @@ public sealed class GlassSurface : Panel
             Marshal.FreeHGlobal(accentPtr);
         }
         catch { /* Blur not supported */ }
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

@@ -185,17 +185,17 @@ public sealed class DoubleBezelCard : Panel
         var translateY = (int)(-_hoverProgress * 1f);
 
         // Outer border color interpolation
-        var borderColor = InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _hoverProgress);
+        var borderColor = DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _hoverProgress);
 
         // Shadow interpolation
-        var shadowColors = InterpolateShadows(ThemeManager.Current.Shadow1, ThemeManager.Current.ShadowAccent, _hoverProgress);
+        var shadowColors = DrawHelpers.InterpolateShadows(ThemeManager.Current.Shadow1, ThemeManager.Current.ShadowAccent, _hoverProgress);
 
         // Draw shadow (dual-layer)
-        DrawShadow(g, rect, shadowColors, translateY);
+        DrawHelpers.DrawShadow(g, rect, shadowColors, _cornerRadius, translateY);
 
         // Draw background
         using var bgBrush = new SolidBrush(ThemeManager.Current.Surface1);
-        using var bgPath = GetRoundedRect(rect, _cornerRadius);
+        using var bgPath = DrawHelpers.GetRoundedRect(rect, _cornerRadius);
         g.FillPath(bgBrush, bgPath);
 
         // Draw outer border
@@ -210,7 +210,7 @@ public sealed class DoubleBezelCard : Panel
             rect.Height - _insetOffset * 2
         );
         var insetRadius = Math.Max(1, _cornerRadius - _insetOffset);
-        using var insetPath = GetRoundedRect(insetRect, insetRadius);
+        using var insetPath = DrawHelpers.GetRoundedRect(insetRect, insetRadius);
         using var insetPen = new Pen(Color.FromArgb((int)(0.045 * 255 * _hoverProgress + 0.045 * 255 * (1 - _hoverProgress)), 255, 255, 255), 1);
         // Inner bezel is always subtle white 0.045 opacity
         using var insetPenFixed = new Pen(Color.FromArgb(11, 255, 255, 255), 1); // 0.045 * 255 ≈ 11
@@ -222,80 +222,6 @@ public sealed class DoubleBezelCard : Panel
             using var highlightPen = new Pen(Color.FromArgb((int)(0.05 * 255 * _hoverProgress), 255, 255, 255), 1);
             g.DrawPath(highlightPen, insetPath);
         }
-    }
-
-    private void DrawShadow(Graphics g, Rectangle rect, Color[] colors, int translateY)
-    {
-        if (colors.Length < 2) return;
-
-        var shadowRect = new Rectangle(
-            rect.X,
-            rect.Y + translateY + 1, // tight shadow offset
-            rect.Width,
-            rect.Height
-        );
-
-        // Tight shadow (small blur)
-        using var tightPath = GetRoundedRect(shadowRect, _cornerRadius);
-        using var tightBrush = new SolidBrush(Color.FromArgb(colors[0].A, colors[0]));
-        // Simulate blur by drawing multiple offset layers
-        for (int i = 1; i <= 2; i++)
-        {
-            var offsetRect = new Rectangle(shadowRect.X, shadowRect.Y + i, shadowRect.Width, shadowRect.Height);
-            using var p = GetRoundedRect(offsetRect, _cornerRadius);
-            g.FillPath(tightBrush, p);
-        }
-
-        // Diffuse shadow (large blur)
-        var diffuseRect = new Rectangle(
-            rect.X - 4,
-            rect.Y + translateY + 8,
-            rect.Width + 8,
-            rect.Height + 8
-        );
-        using var diffuseBrush = new SolidBrush(Color.FromArgb(colors[1].A, colors[1]));
-        for (int i = 4; i <= 16; i += 4)
-        {
-            var offsetRect = new Rectangle(diffuseRect.X, diffuseRect.Y + i, diffuseRect.Width, diffuseRect.Height);
-            using var p = GetRoundedRect(offsetRect, _cornerRadius);
-            g.FillPath(diffuseBrush, p);
-        }
-    }
-
-    private Color InterpolateColor(Color from, Color to, float t)
-    {
-        return Color.FromArgb(
-            (int)(from.A + (to.A - from.A) * t),
-            (int)(from.R + (to.R - from.R) * t),
-            (int)(from.G + (to.G - from.G) * t),
-            (int)(from.B + (to.B - from.B) * t)
-        );
-    }
-
-    private Color[] InterpolateShadows(Color[] from, Color[] to, float t)
-    {
-        var result = new Color[Math.Max(from.Length, to.Length)];
-        for (int i = 0; i < result.Length; i++)
-        {
-            var f = i < from.Length ? from[i] : from[^1];
-            var tt = i < to.Length ? to[i] : to[^1];
-            result[i] = InterpolateColor(f, tt, t);
-        }
-        return result;
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 
     public void RefreshTheme()

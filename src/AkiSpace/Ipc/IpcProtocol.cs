@@ -14,6 +14,9 @@ public enum IpcPayloadType : byte
 
     /// <summary>Child confirmation that it handled a batch (child -> primary).</summary>
     RelativeMouseResult = 3,
+
+    /// <summary>Handshake frame: 32-byte nonce for pipe authentication (client -> server).</summary>
+    Handshake = 4,
 }
 
 /// <summary>A single accumulated relative mouse movement sample.</summary>
@@ -157,4 +160,17 @@ public static class IpcProtocol
 
     public static T DeserializeJson<T>(byte[] payload) =>
         System.Text.Json.JsonSerializer.Deserialize<T>(payload)!;
+
+    // ---- Handshake nonce ----
+
+    /// <summary>Serializes a 32-byte nonce as a frame payload.</summary>
+    public static byte[] SerializeNonce(byte[] nonce) => nonce;
+
+    /// <summary>Deserializes a nonce payload, validating length.</summary>
+    public static byte[] DeserializeNonce(byte[] payload)
+    {
+        if (payload.Length != 32)
+            throw new InvalidOperationException($"Invalid nonce length: {payload.Length} (expected 32)");
+        return payload;
+    }
 }

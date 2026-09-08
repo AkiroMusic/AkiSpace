@@ -30,6 +30,7 @@ public sealed class SettingsDialog : Form
     private readonly StyledCheckBox _chkMinimizeToTray = new();
     private readonly StyledCheckBox _chkShowPerformance = new();
     private readonly StyledCheckBox _chkEnableGlobalHotkey = new();
+    private readonly StyledCheckBox _chkGameMouseMode = new();
 
     // Account section
     private readonly StyledTextBox _txtCloneUsername = new();
@@ -174,41 +175,6 @@ public sealed class SettingsDialog : Form
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
-        void AddRow(int row, string label, Control control, string? hint = null)
-        {
-            var lbl = new Label
-            {
-                Text = label,
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = ThemeManager.Current.TextPrimary,
-                BackColor = Color.Transparent,
-                Font = ThemeManager.Current.GetFontSans(13f),
-                Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
-                AutoSize = true,
-            };
-            control.Margin = new Padding(0, 4, 0, 8);
-            control.Dock = DockStyle.Fill;
-            grid.Controls.Add(lbl, 0, row);
-            grid.Controls.Add(control, 1, row);
-
-            if (!string.IsNullOrEmpty(hint))
-            {
-                var hintLbl = new Label
-                {
-                    Text = hint,
-                    Dock = DockStyle.Fill,
-                    ForeColor = ThemeManager.Current.TextTertiary,
-                    BackColor = Color.Transparent,
-                    Font = ThemeManager.Current.GetFontSans(11f),
-                    AutoSize = true,
-                    Margin = new Padding(0, -4, 0, 8),
-                };
-                grid.SetColumnSpan(hintLbl, 2);
-                grid.Controls.Add(hintLbl, 0, row + 1);
-            }
-        }
-
         _cmbConnectionMode.Items.AddRange(new object[] { "标准RDP（不同用户）", "子会话（同一用户）" });
         _cmbConnectionMode.DropDownStyle = ComboBoxStyle.DropDownList;
         _cmbConnectionMode.Width = 300;
@@ -222,13 +188,13 @@ public sealed class SettingsDialog : Form
         _chkShortcutsRemote.Text = "系统快捷键发送到分身";
         _chkAudioRedirect.Text = "音频重定向到本机";
 
-        AddRow(0, "连接模式", _cmbConnectionMode);
-        AddRow(1, "分身桌面宽度", _numWidth, "像素，建议匹配显示器分辨率");
-        AddRow(2, "分身桌面高度", _numHeight, "像素，建议匹配显示器分辨率");
-        AddRow(3, "颜色深度", _numColorDepth, "位，32位为真彩色");
-        AddRow(4, "RDP 端口", _numPort, "默认 3389，修改后需重启 TermService");
-        AddRow(5, "", _chkSmartSizing);
-        AddRow(6, "", _chkShortcutsRemote);
+        AddRow(grid, 0, "连接模式", _cmbConnectionMode);
+        AddRow(grid, 1, "分身桌面宽度", _numWidth, "像素，建议匹配显示器分辨率");
+        AddRow(grid, 2, "分身桌面高度", _numHeight, "像素，建议匹配显示器分辨率");
+        AddRow(grid, 3, "颜色深度", _numColorDepth, "位，32位为真彩色");
+        AddRow(grid, 4, "RDP 端口", _numPort, "默认 3389，仅当你在系统层面改过 RDP 监听端口时同步修改");
+        AddRow(grid, 5, "", _chkSmartSizing);
+        AddRow(grid, 6, "", _chkShortcutsRemote);
         // Add audio redirect in next row
         var row7 = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Height = 36 };
         _chkAudioRedirect.Dock = DockStyle.Fill;
@@ -245,7 +211,7 @@ public sealed class SettingsDialog : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 6,
             AutoSize = true,
             BackColor = Color.Transparent,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
@@ -256,8 +222,9 @@ public sealed class SettingsDialog : Form
         _chkMinimizeToTray.Text = "最小化到系统托盘";
         _chkShowPerformance.Text = "状态栏显示性能监控 (CPU/内存)";
         _chkEnableGlobalHotkey.Text = "启用全局热键 (Ctrl+Shift+D 切换连接, Ctrl+Alt+Space 显示窗口)";
+        _chkGameMouseMode.Text = "启用游戏鼠标模式（仅标准 RDP，需回放 Agent）";
 
-        var checks = new[] { _chkAutoConnect, _chkLogoffOnExit, _chkMinimizeToTray, _chkShowPerformance, _chkEnableGlobalHotkey };
+        var checks = new[] { _chkAutoConnect, _chkLogoffOnExit, _chkMinimizeToTray, _chkShowPerformance, _chkEnableGlobalHotkey, _chkGameMouseMode };
         for (int i = 0; i < checks.Length; i++)
         {
             checks[i].Dock = DockStyle.Top;
@@ -287,27 +254,8 @@ public sealed class SettingsDialog : Form
         _txtClonePassword.Width = 300;
         _txtClonePassword.UseSystemPasswordChar = true;
 
-        void AddRow(int row, string label, Control control, string? hint = null)
-        {
-            var lbl = new Label
-            {
-                Text = label,
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = ThemeManager.Current.TextPrimary,
-                BackColor = Color.Transparent,
-                Font = ThemeManager.Current.GetFontSans(13f),
-                Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
-                AutoSize = true,
-            };
-            control.Margin = new Padding(0, 4, 0, 8);
-            control.Dock = DockStyle.Fill;
-            grid.Controls.Add(lbl, 0, row);
-            grid.Controls.Add(control, 1, row);
-        }
-
-        AddRow(0, "分身账户用户名", _txtCloneUsername, "标准 RDP 模式必填，如 AkiSpaceUser");
-        AddRow(1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储，默认 lb33 为占位符");
+        AddRow(grid, 0, "分身账户用户名", _txtCloneUsername, "标准 RDP 模式必填，如 AkiSpaceUser");
+        AddRow(grid, 1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储，默认 lb33 为占位符");
 
         card.ContentControls.Add(grid);
     }
@@ -365,6 +313,41 @@ public sealed class SettingsDialog : Form
         card.ContentControls.Add(grid);
     }
 
+    private static void AddRow(TableLayoutPanel grid, int row, string label, Control control, string? hint = null)
+    {
+        var lbl = new Label
+        {
+            Text = label,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            ForeColor = ThemeManager.Current.TextPrimary,
+            BackColor = Color.Transparent,
+            Font = ThemeManager.Current.GetFontSans(13f),
+            Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
+            AutoSize = true,
+        };
+        control.Margin = new Padding(0, 4, 0, 8);
+        control.Dock = DockStyle.Fill;
+        grid.Controls.Add(lbl, 0, row);
+        grid.Controls.Add(control, 1, row);
+
+        if (!string.IsNullOrEmpty(hint))
+        {
+            var hintLbl = new Label
+            {
+                Text = hint,
+                Dock = DockStyle.Fill,
+                ForeColor = ThemeManager.Current.TextTertiary,
+                BackColor = Color.Transparent,
+                Font = ThemeManager.Current.GetFontSans(11f),
+                AutoSize = true,
+                Margin = new Padding(0, -4, 0, 8),
+            };
+            grid.SetColumnSpan(hintLbl, 2);
+            grid.Controls.Add(hintLbl, 0, row + 1);
+        }
+    }
+
     private void LoadSettings()
     {
         var s = _settingsService.Current;
@@ -381,6 +364,7 @@ public sealed class SettingsDialog : Form
         _chkMinimizeToTray.Checked = s.MinimizeToTray;
         _chkShowPerformance.Checked = s.ShowPerformance;
         _chkEnableGlobalHotkey.Checked = s.EnableGlobalHotkey;
+        _chkGameMouseMode.Checked = s.GameMouseModeEnabled;
         _txtCloneUsername.Text = s.CloneUsername;
         _txtClonePassword.Text = s.ClonePassword;
         _txtLaunchProgramPath.Text = s.LaunchProgramPath ?? string.Empty;
@@ -407,6 +391,7 @@ public sealed class SettingsDialog : Form
                 s.MinimizeToTray = _chkMinimizeToTray.Checked;
                 s.ShowPerformance = _chkShowPerformance.Checked;
                 s.EnableGlobalHotkey = _chkEnableGlobalHotkey.Checked;
+                s.GameMouseModeEnabled = _chkGameMouseMode.Checked;
                 s.CloneUsername = _txtCloneUsername.Text;
                 s.ClonePassword = _txtClonePassword.Text;
                 s.LaunchProgramPath = string.IsNullOrWhiteSpace(_txtLaunchProgramPath.Text)

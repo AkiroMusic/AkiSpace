@@ -42,8 +42,9 @@ public sealed class MainForm : Form
     private readonly EnvironmentVerifier _environmentVerifier;
     private readonly ProcessLauncher _processLauncher;
     private readonly CursorCapture _cursorCapture;
-    private readonly KeyboardHandler _keyboardHandler;
     private readonly MouseForwarder _mouseForwarder;
+    private readonly AgentRunner _agentRunner;
+    private readonly PipeServer _pipeServer;
 
     // UI - New Ethereal Glass layout
     private readonly AmbientBackground _ambientBg = new();
@@ -93,6 +94,7 @@ public sealed class MainForm : Form
     private bool _closing;
     private bool _isConnected;
     private bool _isFullscreen = false;
+    private byte[]? _agentNonce;
 
     private string _cloneUsername => _settingsService.Current.CloneUsername;
     private string _clonePassword => _settingsService.Current.ClonePassword;
@@ -104,7 +106,8 @@ public sealed class MainForm : Form
         EnvironmentVerifier environmentVerifier,
         ProcessLauncher processLauncher,
         CursorCapture cursorCapture,
-        KeyboardHandler keyboardHandler,
+        AgentRunner agentRunner,
+        PipeServer pipeServer,
         MouseForwarder mouseForwarder)
     {
         _loggerFactory = loggerFactory;
@@ -114,7 +117,8 @@ public sealed class MainForm : Form
         _environmentVerifier = environmentVerifier;
         _processLauncher = processLauncher;
         _cursorCapture = cursorCapture;
-        _keyboardHandler = keyboardHandler;
+        _agentRunner = agentRunner;
+        _pipeServer = pipeServer;
         _mouseForwarder = mouseForwarder;
 
         // System tray
@@ -885,9 +889,62 @@ public sealed class MainForm : Form
     private void ToggleGameMouse()
     {
         var enabled = _mouseForwarder.IsGameMouseModeEnabled;
+        if (!enabled && !_mouseForwarder.IsAgentConnected)
+        {
+            MessageBox.Show(
+                "回放 Agent 未连接。游戏鼠标模式需要分身侧运行回放 Agent（--agent 模式）。\n" +
+                "请先在分身会话中启动 Agent，或在 Agent 落地前使用标准 RDP 鼠标。",
+                "AkiSpace — 游戏鼠标", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         _mouseForwarder.SetGameMouseModeEnabled(!enabled);
         _btnGameMouse.Text = enabled ? "游戏鼠标" : "游戏鼠标: 开";
         _settingsService.Update(s => s.GameMouseModeEnabled = !enabled);
+    }
+
+    /// <summary>
+    /// Arms the pipe server with a nonce and launches the agent in the child session.
+    /// </summary>
+    private void LaunchAgentInChildSession()
+    {
+        try
+        {
+            _agentNonce = new byte[32];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(_agentNonce);
+            var nonceHex = Convert.ToHexString(_agentNonce).ToLowerInvariant();
+
+            _pipeServer.SetNonce(_agentNonce);
+
+            var exePath = Environment.ProcessPath
+                ?? Process.GetCurrentProcess().MainModule?.FileName;
+            if (exePath is null)
+            {
+                _logger.LogWarning("Cannot determine exe path for agent launch");
+                return;
+            }
+
+            var sid = _sessionManager.TryGetChildSessionId();
+            if (sid is null)
+            {
+                _logger.LogWarning("No child session id — agent not launched");
+                return;
+            }
+
+            var args = $"--agent --nonce {nonceHex}";
+            if (_processLauncher.LaunchInChildSession(exePath, sid.Value, args))
+            {
+                _logger.LogInformation("Agent launched in child session {Sid} (nonce={Nonce})", sid.Value, nonceHex[..16] + "...");
+                _lblConnection.Text = "连接: 已连接 — Agent 启动中";
+            }
+            else
+            {
+                _logger.LogWarning("Agent launch failed in child session {Sid}", sid.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to launch agent in child session");
+        }
     }
 
     private void LaunchProgramInChildSession()
@@ -947,6 +1004,12 @@ public sealed class MainForm : Form
         UpdateTrayIcon(true);
 
         BeginInvoke(() => _rdpHost?.TryFocusRdpInputWindow());
+
+        // Launch the agent in the child session for mouse replay.
+        if (_settingsService.Current.ConnectionMode != ConnectionMode.ChildSession)
+        {
+            LaunchAgentInChildSession();
+        }
 
         var launchPath = _settingsService.Current.LaunchProgramPath;
         if (!string.IsNullOrWhiteSpace(launchPath))

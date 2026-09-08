@@ -18,7 +18,8 @@ public static class PipeNames
 
 /// <summary>
 /// Named-pipe server (primary session side). Listens for a child-session
-/// client connection and exposes typed frame events.
+/// client connection and exposes typed frame events. Verifies a nonce
+/// handshake so only the agent launched with the correct nonce can connect.
 /// </summary>
 public sealed class PipeServer : IAsyncDisposable
 {
@@ -27,13 +28,22 @@ public sealed class PipeServer : IAsyncDisposable
     private CancellationTokenSource? _cts;
     private Task? _listenTask;
 
+    /// <summary>The nonce the connecting agent must present (set via SetNonce).</summary>
+    private byte[]? _expectedNonce;
+
+    /// <summary>True when a verified client is connected.</summary>
+    public bool IsClientConnected { get; private set; }
+
     public PipeServer(ILogger<PipeServer> logger)
     {
         _logger = logger;
     }
 
-    /// <summary>Raised when a client connects. Fires once per accepted connection.</summary>
+    /// <summary>Raised when a client connects and passes the nonce handshake.</summary>
     public event Action<PipeConnection>? ClientConnected;
+
+    /// <summary>Sets the expected handshake nonce. Must be called before Start().</summary>
+    public void SetNonce(byte[] nonce) => _expectedNonce = nonce;
 
     /// <summary>Starts listening for a single child-session connection.</summary>
     public void Start()
@@ -54,14 +64,6 @@ public sealed class PipeServer : IAsyncDisposable
                 NamedPipeServerStream? stream = null;
                 try
                 {
-                    // Note: .NET 8's NamedPipeServerStream does NOT expose a
-                    // constructor that accepts a PipeSecurity, nor a public
-                    // SetAccessControl. The default ACL allows any local user
-                    // to connect to a named pipe; the practical mitigation
-                    // is the predictable, unique pipe name combined with the
-                    // child-session process boundary. A future .NET upgrade
-                    // (or manual SafeHandle ACL) can restore strict per-user
-                    // ACLs.
                     stream = new NamedPipeServerStream(
                         PipeNames.MouseForward,
                         PipeDirection.InOut,
@@ -73,12 +75,23 @@ public sealed class PipeServer : IAsyncDisposable
 
                     _logger.LogInformation("Pipe server listening on {Pipe}", PipeNames.MouseForward);
                     await stream.WaitForConnectionAsync(token).ConfigureAwait(false);
-                    _logger.LogInformation("Child session connected to mouse pipe");
+                    _logger.LogInformation("Pipe client connected, verifying handshake");
 
-                    // Hand ownership of the stream to PipeConnection; it disposes
-                    // when its read loop ends.
+                    // Verify nonce handshake before accepting the connection.
+                    var verified = await VerifyHandshakeAsync(stream, token).ConfigureAwait(false);
+                    if (!verified)
+                    {
+                        _logger.LogWarning("Pipe handshake failed; disconnecting client");
+                        stream.Dispose();
+                        stream = null;
+                        continue;
+                    }
+
+                    _logger.LogInformation("Pipe handshake verified — agent connected");
+                    IsClientConnected = true;
                     var connection = new PipeConnection(stream, _logger);
                     stream = null;
+                    connection.Disconnected += () => IsClientConnected = false;
                     ClientConnected?.Invoke(connection);
                     await connection.RunAsync(token).ConfigureAwait(false);
                 }
@@ -98,12 +111,40 @@ public sealed class PipeServer : IAsyncDisposable
                 }
                 finally
                 {
-                    // Dispose the stream if it was never handed off to a connection
-                    // (e.g. WaitForConnectionAsync was cancelled or threw).
                     stream?.Dispose();
                 }
             }
         });
+    }
+
+    private async Task<bool> VerifyHandshakeAsync(Stream stream, CancellationToken ct)
+    {
+        if (_expectedNonce is null || _expectedNonce.Length == 0)
+        {
+            _logger.LogWarning("No nonce set; accepting connection without handshake (legacy mode)");
+            return true;
+        }
+
+        try
+        {
+            // Read the first frame — it must be a Handshake frame with the matching nonce.
+            var frame = await IpcProtocol.ReadFrameAsync(stream, ct).ConfigureAwait(false);
+            if (frame is null) return false;
+            var (type, payload) = frame.Value;
+            if (type != IpcPayloadType.Handshake) return false;
+            var receivedNonce = IpcProtocol.DeserializeNonce(payload);
+            if (!receivedNonce.SequenceEqual(_expectedNonce))
+            {
+                _logger.LogWarning("Pipe nonce mismatch — rejecting connection");
+                return false;
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Handshake verification failed");
+            return false;
+        }
     }
 
     /// <summary>Stops the listener so a fresh Start() can be called again. Safe to call multiple times.</summary>
@@ -142,10 +183,16 @@ public sealed class PipeClient : IAsyncDisposable
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
 
+    /// <summary>The nonce to present during handshake (set via SetNonce).</summary>
+    private byte[]? _nonce;
+
     public PipeClient(ILogger<PipeClient> logger)
     {
         _logger = logger;
     }
+
+    /// <summary>Sets the nonce for handshake authentication.</summary>
+    public void SetNonce(byte[] nonce) => _nonce = nonce;
 
     /// <summary>Raised when a batch frame arrives from the primary.</summary>
     public event Action<RelativeMouseBatch>? BatchReceived;
@@ -173,7 +220,15 @@ public sealed class PipeClient : IAsyncDisposable
                         ".", PipeNames.MouseForward.Substring(9),
                         PipeDirection.InOut, PipeOptions.Asynchronous);
                     await stream.ConnectAsync(TimeSpan.FromSeconds(2), linked.Token).ConfigureAwait(false);
-                    _logger.LogInformation("Child session connected to primary pipe");
+                    _logger.LogInformation("Connected to primary pipe, sending handshake");
+
+                    // Send handshake nonce before anything else.
+                    if (_nonce is { Length: 32 })
+                    {
+                        await IpcProtocol.WriteFrameAsync(stream, IpcPayloadType.Handshake, _nonce, linked.Token).ConfigureAwait(false);
+                        _logger.LogInformation("Handshake nonce sent");
+                    }
+
                     _connection = new PipeConnection(stream, _logger);
                     _connection.BatchReceived += b => BatchReceived?.Invoke(b);
                     _connection.ResultReceived += r => ResultReceived?.Invoke(r);

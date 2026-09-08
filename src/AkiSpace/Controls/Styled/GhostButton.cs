@@ -58,13 +58,13 @@ public sealed class GhostButton : Button
         var rect = new Rectangle(0, 0, Width - 1, Height - 1);
         var radius = ThemeManager.Current.Radius("sm");
 
-        var borderColor = InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.TextTertiary, _animProgress);
-        var textColor = InterpolateColor(ThemeManager.Current.TextTertiary, ThemeManager.Current.TextSecondary, _animProgress);
-        var bgColor = InterpolateColor(Color.Transparent, Color.FromArgb(15, ThemeManager.Current.TextPrimary.R, ThemeManager.Current.TextPrimary.G, ThemeManager.Current.TextPrimary.B), _animProgress);
+        var borderColor = DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.TextTertiary, _animProgress);
+        var textColor = DrawHelpers.InterpolateColor(ThemeManager.Current.TextTertiary, ThemeManager.Current.TextSecondary, _animProgress);
+        var bgColor = DrawHelpers.InterpolateColor(Color.Transparent, Color.FromArgb(15, ThemeManager.Current.TextPrimary.R, ThemeManager.Current.TextPrimary.G, ThemeManager.Current.TextPrimary.B), _animProgress);
 
         // Background
         using var bgBrush = new SolidBrush(bgColor);
-        using var path = GetRoundedRect(rect, radius);
+        using var path = DrawHelpers.GetRoundedRect(rect, radius);
         g.FillPath(bgBrush, path);
 
         // Border
@@ -76,30 +76,5 @@ public sealed class GhostButton : Button
         var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         using var textBrush = new SolidBrush(textColor);
         g.DrawString(Text, Font, textBrush, textRect, sf);
-    }
-
-    private Color InterpolateColor(Color from, Color to, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return Color.FromArgb(
-            (int)(from.A + (to.A - from.A) * t),
-            (int)(from.R + (to.R - from.R) * t),
-            (int)(from.G + (to.G - from.G) * t),
-            (int)(from.B + (to.B - from.B) * t)
-        );
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

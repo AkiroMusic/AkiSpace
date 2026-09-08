@@ -133,12 +133,6 @@ public static partial class User32
     public static extern bool GetCursorPos(out POINT lpPoint);
 
     [DllImport("user32.dll")]
-    public static extern IntPtr GetCapture();
-
-    [DllImport("user32.dll")]
-    public static extern IntPtr SetCapture(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
     public static extern bool ReleaseCapture();
 
     [DllImport("user32.dll")]
@@ -160,13 +154,7 @@ public static partial class User32
     public static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
-    public static extern IntPtr GetParent(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
     public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll")]
-    public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
 
     [DllImport("user32.dll")]
     public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
@@ -231,18 +219,6 @@ public static partial class User32
         if (!GetGUIThreadInfo(fgThreadId, ref info)) return IntPtr.Zero;
         return info.hwndFocus;
     }
-
-    // ---- System metrics ----
-
-    [DllImport("user32.dll")]
-    public static extern int GetSystemMetrics(int nIndex);
-
-    public const int SM_CXSCREEN = 0;
-    public const int SM_CYSCREEN = 1;
-    public const int SM_XVIRTUALSCREEN = 76;
-    public const int SM_YVIRTUALSCREEN = 77;
-    public const int SM_CXVIRTUALSCREEN = 78;
-    public const int SM_CYVIRTUALSCREEN = 79;
 
     // ---- Message loop / window (used by the raw input monitor thread) ----
 

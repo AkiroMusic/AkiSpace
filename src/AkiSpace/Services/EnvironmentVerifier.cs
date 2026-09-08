@@ -97,29 +97,7 @@ public sealed class EnvironmentVerifier
         return results;
     }
 
-    // Kept for backward compat (used by ApplyAllFixes in elevated mode)
-    private static bool IsListenerActiveInternal(int port)
-    {
-        var endpoints = new[] { "127.0.0.1", "0.0.0.0" };
-        var perAttemptTimeoutMs = 1500;
-        const int maxAttempts = 3;
-        for (var attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            foreach (var host in endpoints)
-            {
-                using var client = new System.Net.Sockets.TcpClient();
-                try
-                {
-                    var task = client.ConnectAsync(host, port);
-                    if (task.Wait(perAttemptTimeoutMs) && client.Connected)
-                        return true;
-                }
-                catch { }
-            }
-            System.Threading.Thread.Sleep(200);
-        }
-        return false;
-    }
+    // Listener probe is delegated to ChildSessionManager.
 
     public EnvCheckResult CheckRdpEnabled()
     {
@@ -165,9 +143,14 @@ public sealed class EnvironmentVerifier
 
     public EnvCheckResult CheckFirewallLoopbackRule()
     {
-        var found = FirewallRuleExists();
-        return new("防火墙回环规则 (RDP 仅本机)", found,
-            found ? "已存在 AkiSpace RDP Loopback 规则" : "缺少回环限制规则（建议添加，仅允许 127.0.0.1 访问 3389）");
+        var allowFound = FirewallRuleExists("AkiSpace RDP Loopback");
+        var blockFound = FirewallRuleExists("AkiSpace RDP Block");
+        var publicRuleFound = FirewallRuleExists("Remote Desktop - User Mode (TCP-In)");
+        var allOk = allowFound && blockFound && !publicRuleFound;
+        var detail = allOk
+            ? "回环 allow + 公网 block 均就位，默认公开规则已删除"
+            : $"allow={allowFound}, block={blockFound}, 公开规则残留={publicRuleFound}";
+        return new("防火墙回环规则 (RDP 仅本机)", allOk, detail);
     }
 
     public EnvCheckResult CheckChildSessions()
@@ -388,11 +371,11 @@ public sealed class EnvironmentVerifier
         }
     }
 
-    private static bool FirewallRuleExists()
+    private static bool FirewallRuleExists(string ruleName = "AkiSpace RDP Loopback")
     {
         try
         {
-            var psi = new ProcessStartInfo("netsh", "advfirewall firewall show rule name=\"AkiSpace RDP Loopback\"")
+            var psi = new ProcessStartInfo("netsh", $"advfirewall firewall show rule name=\"{ruleName}\"")
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -403,31 +386,22 @@ public sealed class EnvironmentVerifier
             if (p == null) return false;
             var output = p.StandardOutput.ReadToEnd();
             p.WaitForExit(5000);
-            return output.Contains("AkiSpace RDP Loopback", StringComparison.OrdinalIgnoreCase);
+            return output.Contains(ruleName, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
-            LogWarning(ex, "FirewallRuleExists failed");
+            LogWarning(ex, $"FirewallRuleExists('{ruleName}') failed");
             return false;
         }
     }
 
-    private static bool EnsureFirewallLoopbackRule()
+    private bool EnsureFirewallLoopbackRule()
     {
         try
         {
-            // Static helper can't reach the instance field; use the registry directly
-            // (same logic as ChildSessionManager.GetConfiguredRdpPort).
-            var port = 3389;
-            try
-            {
-                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(RegistryKeys.RdpTcp);
-                var value = key?.GetValue(RegistryKeys.PortNumber) as int?;
-                if (value is > 0 and <= 65535) port = value.Value;
-            }
-            catch { /* keep default 3389 */ }
+            var port = _sessionManager.GetConfiguredRdpPort();
 
-            if (FirewallRuleExists()) return true;
+            if (FirewallRuleExists("AkiSpace RDP Loopback")) return true;
 
             // Add the loopback allow rule (for 127.0.0.1)
             if (!RunNetsh(BuildFirewallAddRule("AkiSpace RDP Loopback", "allow", port, "127.0.0.1"), 15000))
@@ -435,10 +409,13 @@ public sealed class EnvironmentVerifier
 
             // Also delete the default public allow (if any) and add a matching block rule
             // so the user's stated "loopback only" promise is actually enforced.
-            RunNetsh("advfirewall firewall delete rule name=\"Remote Desktop - User Mode (TCP-In)\"", 10000);
+            if (RunNetsh("advfirewall firewall delete rule name=\"Remote Desktop - User Mode (TCP-In)\"", 10000))
+                _logger.LogInformation("Deleted default 'Remote Desktop - User Mode (TCP-In)' rule");
+            else
+                _logger.LogWarning("Failed to delete 'Remote Desktop - User Mode (TCP-In)' (may not exist; idempotent)");
             RunNetsh(BuildFirewallAddRule("AkiSpace RDP Block", "block", port, "any"), 15000);
 
-            return FirewallRuleExists();
+            return FirewallRuleExists("AkiSpace RDP Loopback");
         }
         catch (Exception ex)
         {

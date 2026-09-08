@@ -62,17 +62,17 @@ public sealed class PrimaryButton : Button
         var radius = ThemeManager.Current.Radius("sm");
 
         // Interpolate colors
-        var bgColor = InterpolateColor(ThemeManager.Current.Surface2, ThemeManager.Current.Accent, _animProgress * 0.12f);
-        var borderColor = InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _animProgress);
-        var textColor = InterpolateColor(ThemeManager.Current.TextPrimary, ThemeManager.Current.Accent, _animProgress);
-        var shadowColors = InterpolateShadows(ThemeManager.Current.Shadow1, ThemeManager.Current.ShadowAccent, _animProgress);
+        var bgColor = DrawHelpers.InterpolateColor(ThemeManager.Current.Surface2, ThemeManager.Current.Accent, _animProgress * 0.12f);
+        var borderColor = DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _animProgress);
+        var textColor = DrawHelpers.InterpolateColor(ThemeManager.Current.TextPrimary, ThemeManager.Current.Accent, _animProgress);
+        var shadowColors = DrawHelpers.InterpolateShadows(ThemeManager.Current.Shadow1, ThemeManager.Current.ShadowAccent, _animProgress);
 
         // Shadow
-        DrawShadow(g, rect, shadowColors);
+        DrawHelpers.DrawShadow(g, rect, shadowColors, ThemeManager.Current.Radius("sm"));
 
         // Background
         using var bgBrush = new SolidBrush(bgColor);
-        using var path = GetRoundedRect(rect, radius);
+        using var path = DrawHelpers.GetRoundedRect(rect, radius);
         g.FillPath(bgBrush, path);
 
         // Border
@@ -84,64 +84,5 @@ public sealed class PrimaryButton : Button
         var sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         using var textBrush = new SolidBrush(textColor);
         g.DrawString(Text, Font, textBrush, textRect, sf);
-    }
-
-    private void DrawShadow(Graphics g, Rectangle rect, Color[] colors)
-    {
-        if (colors.Length < 2) return;
-        var shadowRect = new Rectangle(rect.X, rect.Y + 1, rect.Width, rect.Height);
-        using var brush = new SolidBrush(Color.FromArgb(colors[0].A, colors[0]));
-        using var path = GetRoundedRect(shadowRect, ThemeManager.Current.Radius("sm"));
-        for (int i = 1; i <= 2; i++)
-        {
-            var r = new Rectangle(shadowRect.X, shadowRect.Y + i, shadowRect.Width, shadowRect.Height);
-            using var p = GetRoundedRect(r, ThemeManager.Current.Radius("sm"));
-            g.FillPath(brush, p);
-        }
-        var diffuseRect = new Rectangle(rect.X - 4, rect.Y + 4, rect.Width + 8, rect.Height + 8);
-        using var diffuseBrush = new SolidBrush(Color.FromArgb(colors[1].A, colors[1]));
-        for (int i = 4; i <= 16; i += 4)
-        {
-            var r = new Rectangle(diffuseRect.X, diffuseRect.Y + i, diffuseRect.Width, diffuseRect.Height);
-            using var p = GetRoundedRect(r, ThemeManager.Current.Radius("sm"));
-            g.FillPath(diffuseBrush, p);
-        }
-    }
-
-    private Color InterpolateColor(Color from, Color to, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return Color.FromArgb(
-            (int)(from.A + (to.A - from.A) * t),
-            (int)(from.R + (to.R - from.R) * t),
-            (int)(from.G + (to.G - from.G) * t),
-            (int)(from.B + (to.B - from.B) * t)
-        );
-    }
-
-    private Color[] InterpolateShadows(Color[] from, Color[] to, float t)
-    {
-        var result = new Color[Math.Max(from.Length, to.Length)];
-        for (int i = 0; i < result.Length; i++)
-        {
-            var f = i < from.Length ? from[i] : from[^1];
-            var tt = i < to.Length ? to[i] : to[^1];
-            result[i] = InterpolateColor(f, tt, t);
-        }
-        return result;
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

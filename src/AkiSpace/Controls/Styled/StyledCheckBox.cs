@@ -62,14 +62,14 @@ public sealed class StyledCheckBox : CheckBox
 
         // Box background
         var boxBg = Checked
-            ? InterpolateColor(ThemeManager.Current.Surface2, Color.FromArgb(26, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B), _checkProgress)
+            ? DrawHelpers.InterpolateColor(ThemeManager.Current.Surface2, Color.FromArgb(26, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B), _checkProgress)
             : ThemeManager.Current.Surface2;
         var boxBorder = Checked
-            ? InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _checkProgress)
-            : InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.TextTertiary, _hovered ? 1f : 0f);
+            ? DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _checkProgress)
+            : DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.TextTertiary, _hovered ? 1f : 0f);
 
         using var bgBrush = new SolidBrush(boxBg);
-        using var path = GetRoundedRect(boxRect, radius);
+        using var path = DrawHelpers.GetRoundedRect(boxRect, radius);
         g.FillPath(bgBrush, path);
 
         using var borderPen = new Pen(boxBorder, 1);
@@ -78,7 +78,7 @@ public sealed class StyledCheckBox : CheckBox
         // Checkmark
         if (_checkProgress > 0.1f)
         {
-            var checkColor = InterpolateColor(Color.Transparent, ThemeManager.Current.Accent, _checkProgress);
+            var checkColor = DrawHelpers.InterpolateColor(Color.Transparent, ThemeManager.Current.Accent, _checkProgress);
             using var checkPen = new Pen(checkColor, 2.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
             var cx = boxRect.X + boxRect.Width / 2;
             var cy = boxRect.Y + boxRect.Height / 2;
@@ -105,30 +105,5 @@ public sealed class StyledCheckBox : CheckBox
     {
         var textSize = TextRenderer.MeasureText(Text, Font);
         return new Size(30 + textSize.Width, Math.Max(24, textSize.Height));
-    }
-
-    private Color InterpolateColor(Color from, Color to, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return Color.FromArgb(
-            (int)(from.A + (to.A - from.A) * t),
-            (int)(from.R + (to.R - from.R) * t),
-            (int)(from.G + (to.G - from.G) * t),
-            (int)(from.B + (to.B - from.B) * t)
-        );
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

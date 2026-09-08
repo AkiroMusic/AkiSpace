@@ -341,7 +341,7 @@ public sealed class RdpActiveXHost : AxHost
                     // same technique as GetExtendedSettings)
                     var nonScriptable = GetNonScriptable(client);
                     nonScriptable.put_ClearTextPassword(password);
-                    _logger.LogInformation("Set ClearTextPassword (masked)");
+                    _logger.LogInformation("Set ClearTextPassword");
                 }
             }
 
