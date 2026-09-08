@@ -136,7 +136,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 │  │   (MsRdpClient11 Embed)  │◄─RDP 127.0.0.1►│  Independent Desktop     │
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT Relative  │                │  Mouse Replay (SendInput) │
-│  └─ MouseForwarder         │                │                          │
+│  └─ MouseForwarder         │                │  (--agent, planned v0.1.4)│
 │      └─ Accumulate+10ms Batch│──Named Pipe──►│                          │
 │      └─ ClipCursor+Hide    │                │                          │
 │      └─ Alt Release        │                │                          │
@@ -146,7 +146,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 | Component | File | Responsibility |
 |-----------|------|----------------|
 | Session Mgmt | `Native/WtsApi.cs` | WTS session query/listen status |
-| Input Interop | `Native/User32.cs` | Raw Input, SendInput, ClipCursor, SetCursorPos, GUI thread info |
+| Input Interop | `Native/User32.cs` | Raw Input, SendInput, ClipCursor, GUI thread info |
 | RDP Viewer | `Controls/RdpActiveXHost.cs` | AxHost wraps MsRdpClient11, dual-mode connect (StdRDP/ChildSession), retry logic |
 | IPC | `Ipc/Pipes.cs`, `Ipc/IpcProtocol.cs` | Named Pipes + Binary Frame Protocol |
 | Mouse Capture | `Input/RawInputMonitor.cs` | Dedicated STA thread, RIDEV_INPUTSINK |
@@ -328,8 +328,8 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 │  │   (MsRdpClient11 内嵌)  │◄─RDP 127.0.0.1►│  独立桌面                 │
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT 相对增量  │                │                          │
-│  └─ MouseForwarder         │                │  鼠标重放 (SendInput)     │
-│      └─ 累积+10ms 批处理    │──Named Pipe──►│                          │
+│  └─ MouseForwarder         │                │  Mouse Replay (SendInput) │
+│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent, planned v0.1.4)│
 │      └─ ClipCursor+隐藏    │                │                          │
 │      └─ Alt 释放           │                │                          │
 └────────────────────────────┘                └──────────────────────────┘
@@ -338,7 +338,7 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 | 组件 | 文件 | 职责 |
 |------|------|------|
 | 会话管理 | `Native/WtsApi.cs` | WTS 会话查询/监听状态 |
-| 输入互操作 | `Native/User32.cs` | Raw Input, SendInput, ClipCursor, SetCursorPos, GUI 线程信息 |
+| 输入互操作 | `Native/User32.cs` | Raw Input, SendInput, ClipCursor, GUI 线程信息 |
 | RDP 查看器 | `Controls/RdpActiveXHost.cs` | AxHost 封装 MsRdpClient11, 双模式连接（标准RDP/子会话）, 重试连接 |
 | IPC | `Ipc/Pipes.cs`, `Ipc/IpcProtocol.cs` | 命名管道 + 二进制帧协议 |
 | 鼠标捕获 | `Input/RawInputMonitor.cs` | 独立 STA 线程, RIDEV_INPUTSINK |

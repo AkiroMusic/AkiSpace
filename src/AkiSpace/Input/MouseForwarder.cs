@@ -37,6 +37,7 @@ public sealed class MouseForwarder : IDisposable
     private bool _forwardingActive;
     private bool _captureEnabled;
     private bool _handlingConfirmed;
+    private bool _noAgentWarned;
     private PipeConnection? _primaryConnection;
     private System.Threading.Timer? _pollTimer;
     private int _disposed;
@@ -88,6 +89,12 @@ public sealed class MouseForwarder : IDisposable
 
     /// <summary>True when the cursor is currently clipped/hidden.</summary>
     public bool IsCursorCaptured => _cursorCapture.IsCapturing;
+
+    /// <summary>True when the replay agent (child side) is connected to the pipe.</summary>
+    public bool IsAgentConnected
+    {
+        get { lock (_gate) return _primaryConnection != null && _primaryConnection.IsConnected; }
+    }
 
     /// <summary>
     /// Enables or disables game-mouse mode. When enabled, the pipe server
@@ -226,7 +233,18 @@ public sealed class MouseForwarder : IDisposable
     private void FlushLocked()
     {
         if (_accumulatedX == 0 && _accumulatedY == 0) return;
-        if (_primaryConnection == null || !_primaryConnection.IsConnected) return;
+        if (_primaryConnection == null || !_primaryConnection.IsConnected)
+        {
+            if (!_noAgentWarned)
+            {
+                _noAgentWarned = true;
+                _logger.LogWarning(
+                    "Mouse batch discarded: no agent connection (replay agent not running). " +
+                    "Game mouse mode is ON but batches go nowhere.");
+            }
+            return;
+        }
+        _noAgentWarned = false;
 
         // Clamp deltas to a sane range (protects against driver spikes)
         const int maxDelta = 4096;
@@ -267,6 +285,7 @@ public sealed class MouseForwarder : IDisposable
     {
         try
         {
+            bool forwardingActive;
             lock (_gate)
             {
                 if (!_gameMouseModeEnabled) return;
@@ -293,9 +312,12 @@ public sealed class MouseForwarder : IDisposable
                     else
                         _cursorCapture.Release();
                 }
+
+                // Snapshot for use outside the lock.
+                forwardingActive = _forwardingActive;
             }
 
-            if (!_forwardingActive) return;
+            if (!forwardingActive) return;
 
             var bounds = _getCaptureBounds?.Invoke() ?? default;
             if (bounds.Width > 0 && !_cursorCapture.IsCapturing)

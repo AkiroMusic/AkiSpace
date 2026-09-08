@@ -239,9 +239,24 @@ public sealed class SetupDialog : Form
 
     private async void RunChecks()
     {
-        var results = await _verifier.RunAllChecksAsync();
-        if (IsDisposed) return;
-        RenderChecks(results);
+        try
+        {
+            var results = await _verifier.RunAllChecksAsync();
+            if (IsDisposed) return;
+            RenderChecks(results);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Environment check failed");
+            if (IsDisposed) return;
+            _listView.BeginUpdate();
+            _listView.Items.Clear();
+            var item = new ListViewItem("环境检查");
+            item.SubItems.Add("✗ 错误");
+            item.SubItems.Add($"检查失败：{ex.Message}");
+            _listView.Items.Add(item);
+            _listView.EndUpdate();
+        }
     }
 
     private void RenderChecks(List<EnvCheckResult> results)

@@ -143,6 +143,13 @@ public sealed class SettingsService
                 _logger.LogInformation("Upgrading settings.json ClonePassword to DPAPI protection");
             }
             loaded.ClonePassword = SettingsProtection.Unprotect(loaded.ClonePassword);
+            if (!string.IsNullOrEmpty(loaded.ClonePassword)
+                && loaded.ClonePassword.StartsWith(SettingsProtection.Prefix, StringComparison.Ordinal))
+            {
+                _logger.LogWarning(
+                    "ClonePassword DPAPI decryption failed (key was created on a different user/machine); " +
+                    "using literal fallback. Please re-enter the clone password in Settings.");
+            }
             return loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)

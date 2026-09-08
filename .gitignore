@@ -26,7 +26,12 @@ Desktop.ini
 
 # Test results
 TestResults/
+test-results/
 *.trx
+
+# Temporary
+tmp/
+*.tmp
 
 # NuGet
 packages/

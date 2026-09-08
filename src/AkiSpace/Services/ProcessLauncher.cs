@@ -56,20 +56,33 @@ public sealed class ProcessLauncher
             if (!string.IsNullOrWhiteSpace(arguments))
                 action.Arguments = arguments;
 
-            // Register (interactive token: no password needed)
-            dynamic registeredTask = rootFolder.RegisterTaskDefinition(
-                taskName, taskDefinition,
-                TaskCreateOrUpdate, null, null,
-                TaskLogonInteractiveToken, "");
+            dynamic registeredTask = null;
+            try
+            {
+                // Register (interactive token: no password needed)
+                registeredTask = rootFolder.RegisterTaskDefinition(
+                    taskName, taskDefinition,
+                    TaskCreateOrUpdate, null, null,
+                    TaskLogonInteractiveToken, "");
 
-            // Run in the child session
-            registeredTask.RunEx(null, TaskRunUseSessionId, checked((int)sessionId), null);
+                // Run in the child session
+                registeredTask.RunEx(null, TaskRunUseSessionId, checked((int)sessionId), null);
 
-            _logger.LogInformation("Launched {Exe} in child session {SessionId} (task {Task})", exePath, sessionId, taskName);
-
-            // Cleanup: delete the temp task
-            rootFolder.DeleteTask(taskName, 0);
-            return true;
+                _logger.LogInformation("Launched {Exe} in child session {SessionId} (task {Task})", exePath, sessionId, taskName);
+                return true;
+            }
+            finally
+            {
+                // Always clean up the temp task, even if RunEx threw.
+                try
+                {
+                    rootFolder.DeleteTask(taskName, 0);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogWarning(cleanupEx, "Failed to delete temp task {Task}", taskName);
+                }
+            }
         }
         catch (Exception ex)
         {

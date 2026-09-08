@@ -124,7 +124,7 @@ public sealed class NavigationRail : Panel
 
             // Background (handled by BackColor, but we repaint for hover)
             using var bgBrush = new SolidBrush(btn.BackColor);
-            using var path = GetRoundedRect(rect, radius);
+            using var path = DrawHelpers.GetRoundedRect(rect, radius);
             g.FillPath(bgBrush, path);
 
             // Icon (21px)
@@ -207,20 +207,6 @@ public sealed class NavigationRail : Panel
             // Default: circle
             g.DrawEllipse(pen, cx - s, cy - s, s * 2, s * 2);
         }
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 
     private sealed class NavItem

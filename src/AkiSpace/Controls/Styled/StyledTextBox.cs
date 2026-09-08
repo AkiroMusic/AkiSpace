@@ -63,11 +63,11 @@ public sealed class StyledTextBox : TextBox
         var radius = ThemeManager.Current.Radius("sm");
 
         var bgColor = ThemeManager.Current.Surface2;
-        var borderColor = InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _focusProgress);
+        var borderColor = DrawHelpers.InterpolateColor(ThemeManager.Current.Border, ThemeManager.Current.Accent, _focusProgress);
 
         // Background
         using var bgBrush = new SolidBrush(bgColor);
-        using var path = GetRoundedRect(rect, radius);
+        using var path = DrawHelpers.GetRoundedRect(rect, radius);
         g.FillPath(bgBrush, path);
 
         // Border
@@ -77,30 +77,5 @@ public sealed class StyledTextBox : TextBox
         // Text (use base painting for text rendering with selection support)
         var textRect = new RectangleF(Padding.Left, Padding.Top, Width - Padding.Horizontal, Height - Padding.Vertical);
         TextRenderer.DrawText(g, Text, Font, Rectangle.Round(textRect), ForeColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-    }
-
-    private Color InterpolateColor(Color from, Color to, float t)
-    {
-        t = Math.Clamp(t, 0f, 1f);
-        return Color.FromArgb(
-            (int)(from.A + (to.A - from.A) * t),
-            (int)(from.R + (to.R - from.R) * t),
-            (int)(from.G + (to.G - from.G) * t),
-            (int)(from.B + (to.B - from.B) * t)
-        );
-    }
-
-    private static GraphicsPath GetRoundedRect(Rectangle rect, int radius)
-    {
-        var path = new GraphicsPath();
-        var d = radius * 2;
-        if (d > rect.Width) d = rect.Width;
-        if (d > rect.Height) d = rect.Height;
-        path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-        path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-        path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-        path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
     }
 }

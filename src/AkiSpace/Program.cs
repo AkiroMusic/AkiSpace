@@ -21,6 +21,22 @@ namespace AkiSpace;
             return;
         }
 
+        // --agent --nonce <hex>: child-session replay agent (no UI).
+        if (args.Length > 0 && args[0].Equals("--agent", StringComparison.OrdinalIgnoreCase))
+        {
+            RunAgentMode(args);
+            return;
+        }
+
+            // Single-instance guard: prevents double-open which would cause
+            // settings.json race + PipeServer port collision.
+            using var mutex = new System.Threading.Mutex(true, @"Global\AkiSpace_SingleInstance", out var createdNew);
+            if (!createdNew)
+            {
+                MessageBox.Show("AkiSpace 已经在运行中。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             // Load fonts FIRST before any UI creation
             FontLoader.LoadAll();
 
@@ -74,12 +90,28 @@ namespace AkiSpace;
         Console.ResetColor();
         Console.WriteLine();
 
-        var loggerFactory = LoggerFactory.Create(b => b.AddDebug().SetMinimumLevel(LogLevel.Debug));
+        var loggerFactory = LoggerFactory.Create(b =>
+        {
+            b.AddDebug().SetMinimumLevel(LogLevel.Debug);
+            var logDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AkiSpace", "logs");
+            Directory.CreateDirectory(logDir);
+            var logFile = Path.Combine(logDir, $"akspace-fixenv-{DateTime.Now:yyyyMMdd}.log");
+            b.AddProvider(new FileLoggerProvider(logFile));
+        });
         var logger = loggerFactory.CreateLogger("AkiSpace.FixEnv");
 
         // Build a minimal DI just for the services we need
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddDebug().SetMinimumLevel(LogLevel.Debug));
+        services.AddLogging(b =>
+        {
+            b.AddDebug().SetMinimumLevel(LogLevel.Debug);
+            b.AddProvider(new FileLoggerProvider(
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "AkiSpace", "logs", $"akspace-fixenv-{DateTime.Now:yyyyMMdd}.log")));
+        });
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ChildSessionManager>();
         services.AddSingleton<EnvironmentVerifier>();
@@ -117,6 +149,71 @@ namespace AkiSpace;
         Console.WriteLine();
         Console.WriteLine("按任意键退出...");
         Console.ReadKey(true);
+
+        // Non-zero exit code when any fix failed, so callers/scripts can detect.
+        if (failures > 0)
+            Environment.ExitCode = 1;
+    }
+
+    /// <summary>
+    /// Agent mode: runs the mouse-replay agent in the child session.
+    /// Args: --agent --nonce &lt;hex&gt;
+    /// </summary>
+    static void RunAgentMode(string[] args)
+    {
+        AllocConsole();
+        Console.Title = "AkiSpace — Agent (replay)";
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine("=== AkiSpace Agent (mouse replay) ===");
+        Console.ResetColor();
+
+        var nonceHex = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
+        if (string.IsNullOrEmpty(nonceHex) || nonceHex.Length != 64)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("Error: --nonce <64-char hex> required");
+            Console.ResetColor();
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        byte[] nonce;
+        try
+        {
+            nonce = Convert.FromHexString(nonceHex);
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Error: invalid nonce hex: {ex.Message}");
+            Console.ResetColor();
+            Environment.ExitCode = 2;
+            return;
+        }
+
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddDebug().SetMinimumLevel(LogLevel.Debug));
+        services.AddSingleton<Ipc.PipeClient>();
+        services.AddSingleton<AgentRunner>();
+        using var provider = services.BuildServiceProvider();
+
+        var agent = provider.GetRequiredService<AgentRunner>();
+        var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+        try
+        {
+            agent.RunAsync(nonce, cts.Token).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"Agent error: {ex.Message}");
+            Console.ResetColor();
+            Environment.ExitCode = 1;
+        }
+
+        Console.WriteLine("Agent exiting.");
     }
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
@@ -129,6 +226,13 @@ namespace AkiSpace;
         services.AddLogging(builder =>
         {
             builder.AddDebug();
+            // File logging: writes to %LOCALAPPDATA%\AkiSpace\logs\akspace-YYYYMMDD.log
+            var logDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AkiSpace", "logs");
+            Directory.CreateDirectory(logDir);
+            var logFile = Path.Combine(logDir, $"akspace-{DateTime.Now:yyyyMMdd}.log");
+            builder.AddProvider(new FileLoggerProvider(logFile));
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
@@ -139,10 +243,10 @@ namespace AkiSpace;
         services.AddSingleton<ProcessLauncher>();
         services.AddSingleton<Input.IRawInputMonitor, Input.RawInputMonitor>();
         services.AddSingleton<Input.CursorCapture>();
-        services.AddSingleton<Input.KeyboardHandler>();
         services.AddSingleton<Ipc.PipeServer>();
         services.AddSingleton<Ipc.PipeClient>();
         services.AddSingleton<Input.MouseForwarder>();
+        services.AddSingleton<AgentRunner>();
 
         // UI
         services.AddTransient<MainForm>();

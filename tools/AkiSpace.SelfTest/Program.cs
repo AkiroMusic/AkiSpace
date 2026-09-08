@@ -114,7 +114,6 @@ void Check(string name, bool pass, string? detail = null)
     var listener = mgr.IsRdpListenerActive();
 
     Console.WriteLine($"[INFO] ChildSessionsEnabled={enabled}, ChildSessionId={sid?.ToString() ?? "none"}, RdpWrapper={wrapper}, Port={port}, termsrv={termsrv}, Listener={listener}");
-    Check("WTS child-session query executed without exception", true);
     Check("termsrv version parsed", termsrv != "unknown", termsrv);
 }
 
@@ -137,7 +136,15 @@ void Check(string name, bool pass, string? detail = null)
 // ---- 8. UI smoke test: SetupDialog renders + runs checks ----
 // Runs in a separate STA thread (WinForms requirement), shows the dialog
 // briefly, captures a screenshot, then closes.
+// SKIP: requires an interactive desktop session (not a service/headless context).
 {
+    // Skip if no interactive desktop (e.g., running as a service or in CI).
+    if (!Environment.UserInteractive || Environment.GetEnvironmentVariable("CI") == "true")
+    {
+        Console.WriteLine("[SKIP] UI smoke test: non-interactive session");
+    }
+    else
+    {
     var screenshotPath = Path.Combine(Path.GetTempPath(), "akspace_setup_dialog.png");
     Exception? uiError = null;
     var uiThread = new Thread(() =>
@@ -185,13 +192,27 @@ void Check(string name, bool pass, string? detail = null)
     {
         Check("SetupDialog UI smoke test", false, uiError.Message);
     }
+    } // end else (interactive)
 }
 
 // ---- 9. E2E RDP child-session connection test (real machine, RDP now unlocked) ----
+// SKIP: requires the AkiSpaceUser account + interactive desktop + RDP listener.
 // Creates the RdpActiveXHost on an STA thread, connects to the child session
 // via localhost, and waits for OnLoginComplete. This proves the full
 // ConnectToChildSession pipeline works.
 {
+    // Skip if non-interactive or no AkiSpaceUser account.
+    var mgrCheck = new AkiSpace.Services.ChildSessionManager(
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.ChildSessionManager>.Instance);
+    var canRunE2E = Environment.UserInteractive
+        && Environment.GetEnvironmentVariable("CI") != "true"
+        && mgrCheck.IsRdpListenerActive();
+    if (!canRunE2E)
+    {
+        Console.WriteLine("[SKIP] E2E test: non-interactive session or RDP listener not active");
+    }
+    else
+    {
     Exception? e2eError = null;
     var e2eThread = new Thread(() =>
     {
@@ -290,6 +311,7 @@ void Check(string name, bool pass, string? detail = null)
     {
         Check("E2E RDP multi-session connect", false, e2eError.Message);
     }
+    } // end else (canRunE2E)
 }
 
 // ============================================================
@@ -345,12 +367,6 @@ void _Wave5Tests()
 
     // ---- 13. ApplyAllFixes honors ConnectionMode for hook disable ----
     {
-        // In standard-RDP mode, ApplyAllFixes should NOT call DisableRdpWrapperHook.
-        // We can't easily verify the side effect without admin, so we test the
-        // gating path: that the "保留 RDP Wrapper hook" success entry appears
-        // only in standard-RDP mode. This is a pure logic check via the
-        // (test-visible) internal state: the function does not throw and
-        // returns a result list with the expected entry.
         var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.ChildSessionManager>.Instance;
         var nullLogV = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.EnvironmentVerifier>.Instance;
         var mgr = new AkiSpace.Services.ChildSessionManager(nullLog);
@@ -360,11 +376,11 @@ void _Wave5Tests()
         var settings = new AkiSpace.Services.SettingsService(nullLogS, dir);
         settings.Update(s => s.ConnectionMode = AkiSpace.Services.ConnectionMode.StandardRdp);
         var verifier = new AkiSpace.Services.EnvironmentVerifier(nullLogV, mgr, settings);
-        // The "保留 RDP Wrapper hook" entry should be present when standard RDP.
-        // (We don't run the real ApplyAllFixes because it would touch the
-        // system; instead we verify the gate by exercising the read-only checks.)
-        var checks = verifier.RunAllChecks();
-        Check("EnvVerifier still returns 10 checks after gating", checks.Count == 10);
+        var fixResults = verifier.ApplyAllFixes(alsoDisableRdpWrapper: false);
+        var hasPreserve = fixResults.Any(r => r.Name.Contains("保留 RDP Wrapper"));
+        var hasDisable = fixResults.Any(r => r.Name.Contains("禁用 RDP Wrapper"));
+        Check("StandardRdp mode: ApplyAllFixes preserves RDP Wrapper hook", hasPreserve && !hasDisable,
+            $"preserve={hasPreserve}, disable={hasDisable}");
         Directory.Delete(dir, true);
     }
 
