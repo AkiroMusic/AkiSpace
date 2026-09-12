@@ -69,7 +69,7 @@ public sealed class ThemeManager
     }
 
     /// <summary>
-    /// Switch theme by name ("dark", "light", "sepia", "forest", "ocean", "lavender").
+    /// Set the active theme by name. Valid names are the keys of <see cref="ThemeTokens.Palettes"/>.
     /// </summary>
     public void SetTheme(string themeName, bool persist = true)
     {
@@ -94,17 +94,6 @@ public sealed class ThemeManager
             _logger?.LogInformation("Theme changed to {Theme}", themeName);
             ThemeChanged?.Invoke(this, themeName);
         }
-    }
-
-    /// <summary>
-    /// Cycle to next theme (dark→light→sepia→forest→ocean→lavender→dark).
-    /// </summary>
-    public void CycleTheme()
-    {
-        var themes = new[] { "dark", "light", "sepia", "forest", "ocean", "lavender" };
-        var idx = Array.IndexOf(themes, CurrentThemeName);
-        var next = themes[(idx + 1) % themes.Length];
-        SetTheme(next);
     }
 
     /// <summary>
@@ -159,19 +148,37 @@ public sealed class ThemeManager
     /// UI Sans font (Plus Jakarta Sans) with size/style.
     /// </summary>
     public Font GetFontSans(float size, FontStyle style = FontStyle.Regular) =>
-        FontLoader.UISans(size, style);
+        MakeFont(ThemeTokens.Typography.Sans, size, style, FontFamily.GenericSansSerif);
 
     /// <summary>
     /// Display font (Fraunces) with size/style.
     /// </summary>
     public Font GetFontDisplay(float size, FontStyle style = FontStyle.Regular) =>
-        FontLoader.Display(size, style);
+        MakeFont(ThemeTokens.Typography.Display, size, style, FontFamily.GenericSansSerif);
 
     /// <summary>
     /// Mono font (IBM Plex Mono) with size/style.
     /// </summary>
     public Font GetFontMono(float size, FontStyle style = FontStyle.Regular) =>
-        FontLoader.Mono(size, style);
+        MakeFont(ThemeTokens.Typography.Mono, size, style, FontFamily.GenericMonospace);
+
+    /// <summary>
+    /// Resolve a system font family by name, falling back to <paramref name="fallbackFamily"/>
+    /// when the named family is not installed. Sizes are in pixels (GraphicsUnit.Pixel),
+    /// preserving the unit semantics every call site was built against.
+    /// </summary>
+    private static Font MakeFont(string familyName, float size, FontStyle style, FontFamily fallbackFamily)
+    {
+        try
+        {
+            using var ff = new FontFamily(familyName);
+            return new Font(ff, size, style, GraphicsUnit.Pixel);
+        }
+        catch
+        {
+            return new Font(fallbackFamily, size, style, GraphicsUnit.Pixel);
+        }
+    }
 
     /// <summary>
     /// Spacing tokens.

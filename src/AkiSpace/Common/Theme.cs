@@ -269,7 +269,7 @@ public static class ThemeTokens
 
     public static class Typography
     {
-        // Font family names (registered via FontLoader)
+        // Font family names (resolved as system font families with fallbacks)
         public const string Sans = "Plus Jakarta Sans";
         public const string Display = "Fraunces";
         public const string Mono = "IBM Plex Mono";
