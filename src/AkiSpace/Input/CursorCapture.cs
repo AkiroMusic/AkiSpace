@@ -40,12 +40,15 @@ public sealed class CursorCapture : IDisposable
             if (_isCapturing) return false;
             if (bounds.Width <= 0 || bounds.Height <= 0) return false;
 
-            // Save the previous clip rect so we can restore it later
-            if (!User32.GetClipCursor(out var previous))
+            // Save the previous clip rect so we can restore it later. Only trust the
+            // captured RECT when GetClipCursor actually succeeded; otherwise leave null
+            // so Release() falls through to ClipCursor(IntPtr.Zero) instead of restoring garbage.
+            var gotClip = User32.GetClipCursor(out var previous);
+            if (!gotClip)
             {
                 _logger.LogWarning("GetClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
             }
-            _previousClipRect = previous;
+            _previousClipRect = gotClip ? previous : (User32.RECT?)null;
             _captureBounds = bounds;
 
             if (!User32.ClipCursor(ref bounds))
