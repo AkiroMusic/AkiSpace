@@ -5,4 +5,7 @@
   <Folder Name="/tools/">
     <Project Path="tools/AkiSpace.SelfTest/AkiSpace.SelfTest.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AkiSpace.Tests/AkiSpace.Tests.csproj" />
+  </Folder>
 </Solution>
