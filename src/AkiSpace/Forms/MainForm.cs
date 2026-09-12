@@ -1,5 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using AkiSpace.Common;
 using AkiSpace.Controls;
 using AkiSpace.Input;
@@ -66,7 +68,6 @@ public sealed class MainForm : Form
     private System.Windows.Forms.Timer? _statusTimer;
     private bool _closing;
     private bool _isConnected;
-    private bool _isFullscreen;
 
     private string _cloneUsername => _settingsService.Current.CloneUsername;
     private string _clonePassword => _settingsService.Current.ClonePassword;
@@ -285,6 +286,16 @@ public sealed class MainForm : Form
         _statusTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _statusTimer.Tick += (_, _) => RefreshStatus();
         _statusTimer.Start();
+
+        // Resolve the clone-account pipe DACL grant BEFORE restoring game-mouse mode:
+        // SetGameMouseModeEnabled(true) starts the pipe listener, and CreateServerStream
+        // bakes the pipe DACL at stream-creation time. The clone-agent launch
+        // (OnRdpLoginComplete → LaunchAgentInChildSession) happens LATER, so without this
+        // pre-set, a persisted GameMouseModeEnabled=true would start the very first
+        // listening stream with a primary+SYSTEM-only DACL and the cross-user clone agent
+        // would be denied connect at the pipe level. (The nonce needs no such ordering —
+        // VerifyHandshakeAsync reads _expectedNonce per connection, not at stream create.)
+        _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
 
         _mouseForwarder.Initialize(GetRdpViewerBounds, IsRdpInputFocused);
         _mouseForwarder.SetGameMouseModeEnabled(_settingsService.Current.GameMouseModeEnabled);
@@ -618,9 +629,14 @@ public sealed class MainForm : Form
         {
             _agentNonce = new byte[32];
             System.Security.Cryptography.RandomNumberGenerator.Fill(_agentNonce);
-            var nonceHex = Convert.ToHexString(_agentNonce).ToLowerInvariant();
 
             _pipeServer.SetNonce(_agentNonce);
+
+            // Standard-RDP mode: the agent runs under a DIFFERENT account, so the pipe DACL
+            // must also admit the clone account SID (else its connect is denied before the
+            // handshake). Null for child-session mode (same user) → server keeps the tight
+            // primary+SYSTEM-only DACL.
+            _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
 
             var exePath = Environment.ProcessPath
                 ?? Process.GetCurrentProcess().MainModule?.FileName;
@@ -637,20 +653,168 @@ public sealed class MainForm : Form
                 return;
             }
 
-            var args = $"--agent --nonce {nonceHex}";
+            // Deliver the nonce out-of-band via a DACL-protected file instead of the command
+            // line — argv leaks via the Task Scheduler task XML under %WINDIR%\System32\Tasks
+            // and the child process PEB.
+            var nonceFilePath = WriteNonceToProtectedTempFile(_agentNonce);
+            if (nonceFilePath is null)
+            {
+                _logger.LogWarning("Failed to write nonce file; agent not launched");
+                return;
+            }
+
+            var args = $"--agent --nonce-file \"{nonceFilePath}\"";
             if (_processLauncher.LaunchInChildSession(exePath, sid.Value, args))
             {
-                _logger.LogInformation("Agent launched in child session {Sid} (nonce={Nonce})", sid.Value, nonceHex[..16] + "...");
+                _logger.LogInformation("Agent launched in child session {Sid} (nonce delivered via file)", sid.Value);
                 _lblConnection.Text = "连接: 已连接 — Agent 启动中";
             }
             else
             {
                 _logger.LogWarning("Agent launch failed in child session {Sid}", sid.Value);
+                // Launch failed — the agent will never consume the nonce, so delete it here
+                // to avoid orphaning a (DACL-restricted) nonce file on disk.
+                try { File.Delete(nonceFilePath); } catch { /* best-effort */ }
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to launch agent in child session");
+        }
+    }
+
+    /// <summary>
+    /// Writes the handshake nonce to a uniquely-named file whose DACL grants Read to the
+    /// current identity + SYSTEM + (for standard-RDP mode) the clone account, so the
+    /// separately-launched agent — which may run under a DIFFERENT user — can read it, while
+    /// unrelated local users cannot. The nonce is NEVER placed on the command line (argv leaks
+    /// into the Task Scheduler task XML and the PEB). The agent reads+deletes it via
+    /// <see cref="PipeClient.ReadNonceFromFile"/>.
+    ///
+    /// The file lives under %PROGRAMDATA%\AkiSpace because that tree grants the Users group
+    /// traverse+read by inheritance, letting the clone account (a Users member) reach the
+    /// file; %TEMP% would be per-user and unreadable cross-account.
+    /// </summary>
+    private string? WriteNonceToProtectedTempFile(byte[] nonce)
+    {
+        var path = Path.Combine(NonceDirectory(), $"nonce_{Guid.NewGuid():N}.bin");
+        try
+        {
+            // Build the restricted DACL FIRST and create the file WITH it in one atomic
+            // step (FileStream's FileSecurity overload → CreateFile with SECURITY_ATTRIBUTES).
+            // This avoids the write-then-tighten TOCTOU window: the file never exists with
+            // content under %PROGRAMDATA%'s inherited Users:Read ACE. Owner gets Write so it
+            // can write through the handle, Delete so the launch-failure path can remove it.
+            var security = new FileSecurity();
+            security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            var identity = WindowsIdentity.GetCurrent();
+            security.AddAccessRule(new FileSystemAccessRule(
+                identity.User!, // non-null for an interactive logon token
+                FileSystemRights.Read | FileSystemRights.Write | FileSystemRights.Delete,
+                InheritanceFlags.None, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(
+                new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                FileSystemRights.Read, InheritanceFlags.None,
+                PropagationFlags.None, AccessControlType.Allow));
+            // Clone account (standard-RDP / cross-user mode) — Read so the agent running as
+            // AkiSpaceUser can consume the nonce, + Delete so it can remove the file after
+            // reading (the owner's delete right does not transfer to a different identity).
+            // No-op for same-user child-session mode.
+            foreach (var sid in ResolveNonceFileSids())
+            {
+                security.AddAccessRule(new FileSystemAccessRule(
+                    sid, FileSystemRights.Read | FileSystemRights.Delete, InheritanceFlags.None,
+                    PropagationFlags.None, AccessControlType.Allow));
+            }
+
+            // .NET 8 dropped the FileStream(FileSecurity) ctor, so we close the TOCTOU window
+            // like this: open with FileShare.None (an exclusive handle — no other process can
+            // open the file at all while we hold it), tighten the DACL via
+            // FileStream.SetAccessControl ON THE ALREADY-OPEN HANDLE (FileInfo.SetAccessControl
+            // would try a second path-open and hit a sharing violation against our exclusive
+            // handle), and only THEN write the nonce bytes. The handle's WriteData access is
+            // fixed at open time and survives the ACL change; the owner has implicit WRITE_DAC
+            // to set it. Net effect: bytes that exist on disk are only ever present under the
+            // restricted DACL, and during the pre-tighten window the file is empty AND locked.
+            using (var fs = new FileStream(
+                path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096))
+            {
+                fs.SetAccessControl(security);
+                fs.Write(nonce, 0, nonce.Length);
+                fs.Flush(flushToDisk: true);
+            }
+            return path;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to secure nonce file {Path}", path);
+            try { File.Delete(path); } catch { /* best-effort */ }
+            return null;
+        }
+    }
+
+    /// <summary>%PROGRAMDATA%\AkiSpace, created if absent. Traversable+readable by the Users group by inheritance.</summary>
+    private static string NonceDirectory()
+    {
+        var dir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "AkiSpace");
+        Directory.CreateDirectory(dir);
+        return dir;
+    }
+
+    /// <summary>
+    /// Extra SIDs the nonce file must be readable by — currently the configured clone account
+    /// (standard-RDP mode). Returns empty for child-session mode (same user) or when the
+    /// account cannot be translated to a SID.
+    /// </summary>
+    private IEnumerable<SecurityIdentifier> ResolveNonceFileSids()
+    {
+        var sid = TryResolveCloneSid();
+        if (sid is not null) yield return sid;
+    }
+
+    /// <summary>Resolves the configured clone account to a SID, or null (same-user/unresolvable).</summary>
+    private SecurityIdentifier? TryResolveCloneSid()
+    {
+        try
+        {
+            if (_settingsService.Current.ConnectionMode == ConnectionMode.ChildSession)
+                return null; // agent runs as the current user — no extra grant needed
+
+            var user = _settingsService.Current.CloneUsername;
+            if (string.IsNullOrWhiteSpace(user)) return null;
+
+            // Try the qualified form first (MACHINE\user for plain names, or the
+            // DOMAIN\user / UPN exactly as given), then fall back to an unqualified
+            // lookup which succeeds for domain-joined / MSA identities the local
+            // SAM cannot resolve. Fail-closed (null + warning) if neither works.
+            var candidates = user.Contains('\\') || user.Contains('@')
+                ? new[] { new NTAccount(user) }
+                : new[] { new NTAccount(Environment.MachineName, user), new NTAccount(user) };
+
+            foreach (var account in candidates)
+            {
+                try
+                {
+                    if (account.Translate(typeof(SecurityIdentifier)) is SecurityIdentifier sid)
+                        return sid;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "SID lookup failed for account form '{Account}'", account.Value);
+                }
+            }
+            // Every candidate form failed to translate — surface it at Warning level so the
+            // fail-closed degradation is never silent (per-candidate Debug logs alone are not
+            // enough to diagnose a broken agent connection later).
+            _logger.LogWarning("Could not resolve clone account '{User}' to a SID; agent may fail to read the nonce file in standard-RDP mode", _cloneUsername);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve clone account '{User}' to a SID; agent may fail to read the nonce file in standard-RDP mode", _cloneUsername);
+            return null;
         }
     }
 
@@ -763,7 +927,6 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         _logger.LogInformation("Remote requested fullscreen");
-        _isFullscreen = true;
         BeginInvoke(() =>
         {
             WindowState = FormWindowState.Maximized;
@@ -775,7 +938,6 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         _logger.LogInformation("Remote requested leave fullscreen");
-        _isFullscreen = false;
         BeginInvoke(() =>
         {
             FormBorderStyle = FormBorderStyle.Sizable;

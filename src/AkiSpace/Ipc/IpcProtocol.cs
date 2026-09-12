@@ -158,8 +158,11 @@ public static class IpcProtocol
     public static byte[] SerializeJson<T>(T obj) => Encoding.UTF8.GetBytes(
         System.Text.Json.JsonSerializer.Serialize(obj));
 
-    public static T DeserializeJson<T>(byte[] payload) =>
-        System.Text.Json.JsonSerializer.Deserialize<T>(payload)!;
+    public static T DeserializeJson<T>(byte[] payload)
+    {
+        var v = System.Text.Json.JsonSerializer.Deserialize<T>(payload);
+        return v ?? throw new InvalidOperationException("Deserialized null payload.");
+    }
 
     // ---- Handshake nonce ----
 
