@@ -1,6 +1,7 @@
 # Build outputs
 bin/
 obj/
+dist/
 *.exe
 *.dll
 *.pdb
@@ -48,4 +49,6 @@ packages/
 
 # Publish outputs
 publish/
-EOF
+
+# Tooling/session state
+.omo/
