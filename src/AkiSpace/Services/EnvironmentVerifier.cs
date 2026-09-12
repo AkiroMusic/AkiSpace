@@ -143,13 +143,17 @@ public sealed class EnvironmentVerifier
 
     public EnvCheckResult CheckFirewallLoopbackRule()
     {
-        var allowFound = FirewallRuleExists("AkiSpace RDP Loopback");
-        var blockFound = FirewallRuleExists("AkiSpace RDP Block");
+        // The one-click fix installs a SINGLE inbound block rule ("AkiSpace RDP Loopback")
+        // on the RDP port (remoteip=any). Windows Firewall never inspects loopback traffic,
+        // so this blocks every real remote client while loopback RDP keeps working — enforcing
+        // "loopback only" without needing a (no-op) allow=127.0.0.1 rule. It also deletes the
+        // built-in public allow rule so it can't shadow the intent.
+        var blockFound = FirewallRuleExists("AkiSpace RDP Loopback");
         var publicRuleFound = FirewallRuleExists("Remote Desktop - User Mode (TCP-In)");
-        var allOk = allowFound && blockFound && !publicRuleFound;
+        var allOk = blockFound && !publicRuleFound;
         var detail = allOk
-            ? "回环 allow + 公网 block 均就位，默认公开规则已删除"
-            : $"allow={allowFound}, block={blockFound}, 公开规则残留={publicRuleFound}";
+            ? "公网 block 规则就位，默认公开规则已删除（回环经防火墙旁路仍可达）"
+            : $"block={blockFound}, 公开规则残留={publicRuleFound}";
         return new("防火墙回环规则 (RDP 仅本机)", allOk, detail);
     }
 
@@ -384,8 +388,20 @@ public sealed class EnvironmentVerifier
             };
             using var p = Process.Start(psi);
             if (p == null) return false;
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit(5000);
+            // Drain BOTH streams concurrently to avoid a pipe-full deadlock: netsh can
+            // write heavily to stderr, and a synchronous ReadToEnd on one stream while
+            // the other fills would hang the process before WaitForExit returns.
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
+            if (!p.WaitForExit(5000))
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                return false;
+            }
+            // Parameterless WaitForExit flushes any pending async output before we read.
+            p.WaitForExit();
+            _ = errTask.GetAwaiter().GetResult();
+            var output = outTask.GetAwaiter().GetResult();
             return output.Contains(ruleName, StringComparison.OrdinalIgnoreCase);
         }
         catch (Exception ex)
@@ -403,17 +419,22 @@ public sealed class EnvironmentVerifier
 
             if (FirewallRuleExists("AkiSpace RDP Loopback")) return true;
 
-            // Add the loopback allow rule (for 127.0.0.1)
-            if (!RunNetsh(BuildFirewallAddRule("AkiSpace RDP Loopback", "allow", port, "127.0.0.1"), 15000))
-                return false;
-
-            // Also delete the default public allow (if any) and add a matching block rule
-            // so the user's stated "loopback only" promise is actually enforced.
+            // Windows Firewall never inspects loopback (127.0.0.1/::1) traffic — it is
+            // permitted at a higher WFP sub-layer. So an `allow remoteip=127.0.0.1` rule
+            // is a no-op. The correct way to enforce "loopback only" is a single inbound
+            // block rule on the RDP port with remoteip=any: it stops every real remote
+            // client, while loopback keeps working untouched. Block rules also take
+            // precedence over allow rules, so this reliably closes the port remotely.
+            //
+            // First drop the built-in public allow so it can't shadow our intent.
             if (RunNetsh("advfirewall firewall delete rule name=\"Remote Desktop - User Mode (TCP-In)\"", 10000))
                 _logger.LogInformation("Deleted default 'Remote Desktop - User Mode (TCP-In)' rule");
             else
                 _logger.LogWarning("Failed to delete 'Remote Desktop - User Mode (TCP-In)' (may not exist; idempotent)");
-            RunNetsh(BuildFirewallAddRule("AkiSpace RDP Block", "block", port, "any"), 15000);
+
+            // The single AkiSpace rule: block all non-loopback inbound TCP to the RDP port.
+            if (!RunNetsh(BuildFirewallAddRule("AkiSpace RDP Loopback", "block", port, "any"), 15000))
+                return false;
 
             return FirewallRuleExists("AkiSpace RDP Loopback");
         }
@@ -448,7 +469,15 @@ public sealed class EnvironmentVerifier
             };
             using var p = Process.Start(psi);
             if (p is null) return false;
-            p.WaitForExit(timeoutMs);
+            var exited = p.WaitForExit(timeoutMs);
+            if (!exited)
+            {
+                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.WaitForExit(2000); } catch { }
+                LogWarning($"netsh timed out after {timeoutMs}ms: {args}");
+                return false;
+            }
+            // Read ExitCode only after a confirmed exit.
             return p.ExitCode == 0;
         }
         catch (Exception ex)
