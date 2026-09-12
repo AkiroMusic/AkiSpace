@@ -16,7 +16,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **Global Hotkeys**:
   - `Ctrl+Shift+D`: Toggle connect/disconnect
   - `Ctrl+Alt+Space`: Show/restore main window
-- **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. **Hidden in child-session mode** until a paired replay agent is implemented (v0.1.4+).
+- **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. Driven by the paired replay agent (`--agent`), which AkiSpace auto-launches inside the clone session on connect (implemented in v0.1.6). **Hidden in child-session mode.**
 - **Alt Release**: Hold Alt to temporarily release cursor back to host desktop
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
 - **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc.
@@ -106,19 +106,15 @@ Back in AkiSpace → "Environment Check/Repair" → "Recheck". All should show �
 
 ## Security Notes
 
-AkiSpace's "One-Click Fix" now applies two firewall rules in one pass:
-1. **Allow** `127.0.0.1` to port 3389 (or the configured RDP port)
-2. **Block** all other inbound traffic to the same port
+AkiSpace's "One-Click Fix" installs a **single** inbound firewall rule. Windows Firewall never inspects loopback (`127.0.0.1`/`::1`) traffic — it is permitted at a higher WFP sub-layer — so an "allow 127.0.0.1" rule would be a no-op. Instead the fix adds one **block** rule on the RDP port (3389 or the configured port) with `remoteip=any`, which stops every genuine remote client while loopback RDP keeps working via the firewall's loopback bypass. Block rules also take precedence over allow rules, so this reliably closes the port remotely. It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so it can't shadow the block. Both Standard RDP and Child Session use this port.
 
-It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so "loopback only" is actually enforced. Both Standard RDP and Child Session use this port.
-
-Other security defaults in v0.1.3:
+Other security defaults (current release v0.1.6; hardening landed earlier in v0.1.3):
 - **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. The default placeholder `lb33` triggers a `Warning` log on every Connect until the user changes it in Settings.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
 
 ```powershell
-# Optional belt-and-suspenders: confirm only the loopback allow exists
+# Optional belt-and-suspenders: confirm the AkiSpace block rule exists and the default public rule is gone
 Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table Name, DisplayName, Direction, Action
 ```
 
@@ -136,7 +132,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 │  │   (MsRdpClient11 Embed)  │◄─RDP 127.0.0.1►│  Independent Desktop     │
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT Relative  │                │  Mouse Replay (SendInput) │
-│  └─ MouseForwarder         │                │  (--agent, planned v0.1.4)│
+│  └─ MouseForwarder         │                │  (--agent, implemented)   │
 │      └─ Accumulate+10ms Batch│──Named Pipe──►│                          │
 │      └─ ClipCursor+Hide    │                │                          │
 │      └─ Alt Release        │                │                          │
@@ -152,7 +148,6 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 | Mouse Capture | `Input/RawInputMonitor.cs` | Dedicated STA thread, RIDEV_INPUTSINK |
 | Mouse Forward | `Input/MouseForwarder.cs` | Accumulate/direction-reverse flush/10ms batch/Alt release |
 | Cursor Mgmt | `Input/CursorCapture.cs` | ClipCursor + ShowCursor(false) paired restore |
-| Keyboard | `Input/KeyboardHandler.cs` | Input Capture Window focus + SendKeys |
 | Elevated Launch | `Services/ProcessLauncher.cs` | Task Scheduler COM (TASK_RUN_USE_SESSION_ID) |
 | Env Check | `Services/EnvironmentVerifier.cs` | 10 prerequisite checks/fixes |
 
@@ -171,7 +166,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 ## Development
 
 ```
-AkiSpace.sln
+AkiSpace.slnx
 src/AkiSpace/          Main App (WinForms, net8.0-windows)
   Native/              P/Invoke + COM Interfaces
   Services/            Session Mgmt/Settings/Env Check/Process Launch
@@ -208,7 +203,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **全局热键**：
   - `Ctrl+Shift+D`：切换连接/断开分身
   - `Ctrl+Alt+Space`：显示/恢复主窗口
-- **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。**子会话模式下隐藏该按钮**，等待配对的回放 Agent 实现（v0.1.4+）。
+- **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。由配对的回放 Agent（`--agent`）驱动，AkiSpace 在连接时会自动在分身会话中启动该 Agent（已于 v0.1.6 实现）。**子会话模式下隐藏该按钮。**
 - **Alt 键释放**：按住 Alt 临时释放光标，回到主桌面操作
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
 - **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件
@@ -298,19 +293,15 @@ Restart-Service TermService -Force
 
 ## 安全建议
 
-AkiSpace 的「一键修复」会同时下发两条防火墙规则：
-1. **允许**`127.0.0.1` 访问 3389 端口（或「设置」中配置的自定义 RDP 端口）
-2. **阻断**其他所有 IP 对同一端口的入站连接
+AkiSpace 的「一键修复」只下发**一条**防火墙规则。Windows 防火墙从不检查回环（`127.0.0.1`/`::1`）流量——它在更高的 WFP 子层被放行——所以「允许 127.0.0.1」这类规则其实是空操作。取而代之，修复会在 RDP 端口（3389 或「设置」中配置的端口）上添加一条 `remoteip=any` 的入站**阻断**规则：它拦下所有真正来自远端的连接，而回环 RDP 凭借防火墙的回环旁路照常工作。阻断规则的优先级高于允许规则，因此能可靠地对远端关闭该端口。如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），以免它干扰阻断效果。标准 RDP 模式和子会话模式都通过此端口连接。
 
-如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），使「仅回环可连」这一承诺真正生效。标准 RDP 模式和子会话模式都通过此端口连接。
-
-v0.1.3 的其他安全默认：
+v0.1.6（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认：
 - **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。默认占位符 `lb33` 会在每次「连接」时打 `Warning` 日志，直到用户在「设置」中改掉。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。
 
 ```powershell
-# 可选：双保险，确认只有回环 allow 规则
+# 可选：双保险，确认 AkiSpace 阻断规则已存在且默认公开规则已删除
 Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table Name, DisplayName, Direction, Action
 ```
 
@@ -329,7 +320,7 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT 相对增量  │                │                          │
 │  └─ MouseForwarder         │                │  Mouse Replay (SendInput) │
-│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent, planned v0.1.4)│
+│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent, 已实现)       │
 │      └─ ClipCursor+隐藏    │                │                          │
 │      └─ Alt 释放           │                │                          │
 └────────────────────────────┘                └──────────────────────────┘
@@ -344,7 +335,6 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 | 鼠标捕获 | `Input/RawInputMonitor.cs` | 独立 STA 线程, RIDEV_INPUTSINK |
 | 鼠标转发 | `Input/MouseForwarder.cs` | 累积/方向反转即刷/10ms 批处理/Alt 释放 |
 | 光标管理 | `Input/CursorCapture.cs` | ClipCursor + ShowCursor(false) 配对恢复 |
-| 键盘 | `Input/KeyboardHandler.cs` | Input Capture Window 焦点 + SendKeys |
 | 提权启动 | `Services/ProcessLauncher.cs` | Task Scheduler COM (TASK_RUN_USE_SESSION_ID) |
 | 环境检查 | `Services/EnvironmentVerifier.cs` | 10 项前置条件检测/修复 |
 
@@ -363,7 +353,7 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 ## 开发
 
 ```
-AkiSpace.sln
+AkiSpace.slnx
 src/AkiSpace/          主程序 (WinForms, net8.0-windows)
   Native/              P/Invoke + COM 接口
   Services/            会话管理/设置/环境检查/进程启动
@@ -375,4 +365,3 @@ tools/AkiSpace.SelfTest/   自检程序（协议/设置/环境检测/UI 冒烟/E
 ```
 
 运行自检：`dotnet run --project tools/AkiSpace.SelfTest`
-EOF
