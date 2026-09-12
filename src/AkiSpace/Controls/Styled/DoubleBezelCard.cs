@@ -141,7 +141,7 @@ public sealed class DoubleBezelCard : Panel
     }
 
     /// <summary>Card content (replaces Children)</summary>
-    public new ControlCollection ContentControls => Controls;
+    public ControlCollection ContentControls => Controls;
 
     private void UpdateHeaderSpacing()
     {

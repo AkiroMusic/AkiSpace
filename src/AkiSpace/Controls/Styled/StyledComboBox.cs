@@ -12,7 +12,6 @@ namespace AkiSpace.Controls.Styled;
 public sealed class StyledComboBox : ComboBox
 {
     private bool _focused = false;
-    private bool _dropped = false;
     private float _focusProgress = 0f;
     private readonly System.Windows.Forms.Timer _timer;
 
@@ -32,9 +31,9 @@ public sealed class StyledComboBox : ComboBox
         _timer.Tick += (_, _) => Animate();
 
         Enter += (_, _) => { _focused = true; _timer.Start(); };
-        Leave += (_, _) => { _focused = false; _dropped = false; _timer.Start(); };
-        DropDown += (_, _) => { _dropped = true; Invalidate(); };
-        DropDownClosed += (_, _) => { _dropped = false; Invalidate(); };
+        Leave += (_, _) => { _focused = false; _timer.Start(); };
+        DropDown += (_, _) => Invalidate();
+        DropDownClosed += (_, _) => Invalidate();
     }
 
     private void Animate()

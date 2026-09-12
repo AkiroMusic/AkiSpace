@@ -45,6 +45,9 @@ public sealed class StyledListView : ListView
 
     protected override void OnDrawColumnHeader(DrawListViewColumnHeaderEventArgs e)
     {
+        var header = e.Header;
+        if (header is null) return;
+
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
@@ -60,7 +63,7 @@ public sealed class StyledListView : ListView
         var sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center };
         using var textBrush = new SolidBrush(ThemeManager.Current.TextTertiary);
         var textRect = new RectangleF(rect.X + 16, rect.Y, rect.Width - 32, rect.Height);
-        g.DrawString(e.Header.Text, ThemeManager.Current.GetFontSans(10f, FontStyle.Bold), textBrush, textRect, sf);
+        g.DrawString(header.Text, ThemeManager.Current.GetFontSans(10f, FontStyle.Bold), textBrush, textRect, sf);
     }
 
     protected override void OnDrawItem(DrawListViewItemEventArgs e)
