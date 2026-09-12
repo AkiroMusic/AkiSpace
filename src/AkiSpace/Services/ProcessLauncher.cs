@@ -56,11 +56,10 @@ public sealed class ProcessLauncher
             if (!string.IsNullOrWhiteSpace(arguments))
                 action.Arguments = arguments;
 
-            dynamic registeredTask = null;
             try
             {
                 // Register (interactive token: no password needed)
-                registeredTask = rootFolder.RegisterTaskDefinition(
+                dynamic registeredTask = rootFolder.RegisterTaskDefinition(
                     taskName, taskDefinition,
                     TaskCreateOrUpdate, null, null,
                     TaskLogonInteractiveToken, "");
