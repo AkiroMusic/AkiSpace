@@ -7,10 +7,10 @@ using Microsoft.Extensions.Logging;
 
 namespace AkiSpace;
 
-    static class Program
-    {
-        /// <summary>The main entry point for the application.</summary>
-        [STAThread]
+static class Program
+{
+    /// <summary>The main entry point for the application.</summary>
+    [STAThread]
     static void Main(string[] args)
     {
         // --fix-env [--disable-wrapper]: re-launched elevated to apply environment fixes.
@@ -21,60 +21,57 @@ namespace AkiSpace;
             return;
         }
 
-        // --agent --nonce <hex>: child-session replay agent (no UI).
+        // --agent --nonce-file <path>: child-session replay agent (no UI).
         if (args.Length > 0 && args[0].Equals("--agent", StringComparison.OrdinalIgnoreCase))
         {
             RunAgentMode(args);
             return;
         }
 
-            // Single-instance guard: prevents double-open which would cause
-            // settings.json race + PipeServer port collision.
-            using var mutex = new System.Threading.Mutex(true, @"Global\AkiSpace_SingleInstance", out var createdNew);
-            if (!createdNew)
-            {
-                MessageBox.Show("AkiSpace 已经在运行中。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
-
-            // Load fonts FIRST before any UI creation
-            FontLoader.LoadAll();
-
-            // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
-            ApplicationConfiguration.Initialize();
-
-            var services = BuildServices();
-            using var provider = services.BuildServiceProvider();
-
-            var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("AkiSpace");
-            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-                logger.LogCritical(e.ExceptionObject as Exception, "AppDomain unhandled exception");
-            Application.ThreadException += (_, e) =>
-                logger.LogError(e.Exception, "UI thread exception");
-
-            // Initialize theme manager with settings
-            var settingsService = provider.GetRequiredService<SettingsService>();
-            var themeManager = ThemeManager.Current;
-            themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
-
-            try
-            {
-                var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-                logger.LogInformation("AkiSpace starting (build {Version})", version);
-                Application.Run(provider.GetRequiredService<MainForm>());
-                logger.LogInformation("AkiSpace exited cleanly");
-            }
-            catch (Exception ex)
-            {
-                logger.LogCritical(ex, "Fatal startup/shutdown error");
-                MessageBox.Show(
-                    $"AkiSpace 遇到致命错误：\n{ex.Message}\n\n详细信息见日志。",
-                    "AkiSpace",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
+        // Single-instance guard: prevents double-open which would cause
+        // settings.json race + PipeServer port collision.
+        using var mutex = new System.Threading.Mutex(true, @"Global\AkiSpace_SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            MessageBox.Show("AkiSpace 已经在运行中。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
         }
+
+        // COM ActiveX (MSTSC) requires STA. WinForms default + PerMonitorV2 DPI.
+        ApplicationConfiguration.Initialize();
+
+        var services = BuildServices();
+        using var provider = services.BuildServiceProvider();
+
+        var loggerFactory = provider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("AkiSpace");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            logger.LogCritical(e.ExceptionObject as Exception, "AppDomain unhandled exception");
+        Application.ThreadException += (_, e) =>
+            logger.LogError(e.Exception, "UI thread exception");
+
+        // Initialize theme manager with settings
+        var settingsService = provider.GetRequiredService<SettingsService>();
+        var themeManager = ThemeManager.Current;
+        themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
+
+        try
+        {
+            var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+            logger.LogInformation("AkiSpace starting (build {Version})", version);
+            Application.Run(provider.GetRequiredService<MainForm>());
+            logger.LogInformation("AkiSpace exited cleanly");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Fatal startup/shutdown error");
+            MessageBox.Show(
+                $"AkiSpace 遇到致命错误：\n{ex.Message}\n\n详细信息见日志。",
+                "AkiSpace",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
 
     /// <summary>
     /// Elevated mode: apply environment fixes (registry, firewall, service, child sessions).
@@ -90,32 +87,27 @@ namespace AkiSpace;
         Console.ResetColor();
         Console.WriteLine();
 
-        var loggerFactory = LoggerFactory.Create(b =>
+        // Build a minimal DI just for the services we need. The single
+        // FileLoggerProvider registration below is the only file sink for
+        // this mode (previously a standalone LoggerFactory double-registered
+        // the same log file with an independent lock).
+        var services = new ServiceCollection();
+        services.AddLogging(b =>
         {
             b.AddDebug().SetMinimumLevel(LogLevel.Debug);
             var logDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "AkiSpace", "logs");
             Directory.CreateDirectory(logDir);
-            var logFile = Path.Combine(logDir, $"akspace-fixenv-{DateTime.Now:yyyyMMdd}.log");
-            b.AddProvider(new FileLoggerProvider(logFile));
-        });
-        var logger = loggerFactory.CreateLogger("AkiSpace.FixEnv");
-
-        // Build a minimal DI just for the services we need
-        var services = new ServiceCollection();
-        services.AddLogging(b =>
-        {
-            b.AddDebug().SetMinimumLevel(LogLevel.Debug);
             b.AddProvider(new FileLoggerProvider(
-                Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "AkiSpace", "logs", $"akspace-fixenv-{DateTime.Now:yyyyMMdd}.log")));
+                Path.Combine(logDir, $"akspace-fixenv-{DateTime.Now:yyyyMMdd}.log")));
         });
         services.AddSingleton<SettingsService>();
         services.AddSingleton<ChildSessionManager>();
         services.AddSingleton<EnvironmentVerifier>();
         using var provider = services.BuildServiceProvider();
+
+        var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("AkiSpace.FixEnv");
 
         var verifier = provider.GetRequiredService<EnvironmentVerifier>();
 
@@ -157,7 +149,7 @@ namespace AkiSpace;
 
     /// <summary>
     /// Agent mode: runs the mouse-replay agent in the child session.
-    /// Args: --agent --nonce &lt;hex&gt;
+    /// Args: --agent --nonce-file &lt;path&gt; (nonce delivered out-of-band, never on argv).
     /// </summary>
     static void RunAgentMode(string[] args)
     {
@@ -167,25 +159,24 @@ namespace AkiSpace;
         Console.WriteLine("=== AkiSpace Agent (mouse replay) ===");
         Console.ResetColor();
 
-        var nonceHex = args.Skip(1).FirstOrDefault(a => !a.StartsWith("--"));
-        if (string.IsNullOrEmpty(nonceHex) || nonceHex.Length != 64)
+        // Nonce is delivered OUT OF BAND via a DACL-protected temp file (never on the
+        // command line — argv leaks into the Task Scheduler task XML under
+        // %WINDIR%\System32\Tasks and the process PEB). Args: --agent --nonce-file "<path>".
+        var nonceFilePath = GetOptionValue(args, "--nonce-file");
+        if (string.IsNullOrEmpty(nonceFilePath))
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("Error: --nonce <64-char hex> required");
+            Console.WriteLine("Error: --nonce-file <path> required");
             Console.ResetColor();
             Environment.ExitCode = 2;
             return;
         }
 
-        byte[] nonce;
-        try
-        {
-            nonce = Convert.FromHexString(nonceHex);
-        }
-        catch (Exception ex)
+        byte[]? nonce = Ipc.PipeClient.ReadNonceFromFile(nonceFilePath);
+        if (nonce is not { Length: 32 })
         {
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"Error: invalid nonce hex: {ex.Message}");
+            Console.WriteLine("Error: could not read a valid 32-byte nonce from the provided file.");
             Console.ResetColor();
             Environment.ExitCode = 2;
             return;
@@ -218,6 +209,27 @@ namespace AkiSpace;
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll")]
     private static extern bool AllocConsole();
+
+    /// <summary>
+    /// Returns the value that follows <paramref name="optionName"/> in the arg list
+    /// (e.g. "--nonce-file &lt;path&gt;" → the path), or null if the option is absent/empty.
+    /// Supports both "--opt value" and "--opt=value".
+    /// </summary>
+    private static string? GetOptionValue(string[] args, string optionName)
+    {
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (string.Equals(args[i], optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                return i + 1 < args.Length ? args[i + 1] : null;
+            }
+            if (args[i].StartsWith(optionName + "=", StringComparison.OrdinalIgnoreCase))
+            {
+                return args[i][(optionName.Length + 1)..];
+            }
+        }
+        return null;
+    }
 
     static ServiceCollection BuildServices()
     {
