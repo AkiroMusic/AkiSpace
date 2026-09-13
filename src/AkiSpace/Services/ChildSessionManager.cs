@@ -137,53 +137,61 @@ public sealed class ChildSessionManager
     }
 
     /// <summary>
-    /// Checks whether the RDP listener is active by probing the TCP port.
-    /// Probes both 127.0.0.1 and 0.0.0.0 with a generous timeout and a small retry
-    /// loop, because right after a TermService restart (e.g. after disabling the
-    /// RDP Wrapper hook) the listener can take a few seconds to start accepting
-    /// connections on loopback, even though the LISTENING socket is already
-    /// registered.
+    /// Blocking variant for console tools and synchronous check surfaces (SelfTest,
+    /// EnvironmentVerifier.CheckRdpListener). Blocks up to ~5 s while the probe's
+    /// retry loop runs; UI paths should use <see cref="IsRdpListenerActiveAsync"/>.
     /// </summary>
-    public bool IsRdpListenerActive()
+    public bool IsRdpListenerActive() => IsRdpListenerActiveAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Checks whether the RDP listener is active by probing the loopback TCP port.
+    /// Uses a small retry loop with backoff, because right after a TermService
+    /// restart (e.g. after disabling the RDP Wrapper hook) the listener can take a
+    /// few seconds to start accepting connections on loopback, even though the
+    /// LISTENING socket is already registered.
+    /// Fully asynchronous and cancellable: each connect is bounded by a per-attempt
+    /// token, so no task outlives its TcpClient (no orphaned unobserved faults).
+    /// </summary>
+    public async Task<bool> IsRdpListenerActiveAsync(CancellationToken ct = default)
     {
         var port = GetConfiguredRdpPort();
-        var endpoints = new[] { "127.0.0.1", "0.0.0.0" };
-        var perAttemptTimeoutMs = 1500;
         const int maxAttempts = 3;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            foreach (var host in endpoints)
+            var client = new System.Net.Sockets.TcpClient();
+            try
             {
-                using var client = new System.Net.Sockets.TcpClient();
-                try
+                using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attemptCts.CancelAfter(1500);
+                await client.ConnectAsync("127.0.0.1", port, attemptCts.Token).ConfigureAwait(false);
+                if (client.Connected)
                 {
-                    var task = client.ConnectAsync(host, port);
-                    if (task.Wait(perAttemptTimeoutMs) && client.Connected)
-                    {
-                        return true;
-                    }
-                }
-                catch
-                {
-                    // fall through to next attempt
+                    return true;
                 }
             }
-            // small backoff between retry rounds
-            System.Threading.Thread.Sleep(200);
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // per-attempt timeout — fall through to the next attempt
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // caller cancellation must propagate
+            }
+            catch
+            {
+                // refused/unreachable — fall through to the next attempt
+            }
+            finally
+            {
+                client.Dispose();
+            }
+
+            if (attempt < maxAttempts)
+            {
+                try { await Task.Delay(200, ct).ConfigureAwait(false); }
+                catch (OperationCanceledException) { throw; }
+            }
         }
         return false;
-    }
-
-    /// <summary>
-    /// Async wrapper for <see cref="IsRdpListenerActive"/> that runs the (potentially
-    /// up-to-10-second) TCP probe on a worker thread so UI callers don't freeze.
-    /// </summary>
-    public Task<bool> IsRdpListenerActiveAsync(CancellationToken ct = default)
-    {
-        return Task.Run(() =>
-        {
-            ct.ThrowIfCancellationRequested();
-            return IsRdpListenerActive();
-        }, ct);
     }
 }

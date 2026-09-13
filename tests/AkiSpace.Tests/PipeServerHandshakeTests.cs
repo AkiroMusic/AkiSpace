@@ -84,10 +84,11 @@ public sealed class PipeServerHandshakeTests
     /// <summary>
     /// Positive control: with the correct nonce the handshake IS accepted. This
     /// proves the two rejection tests pass because of rejection, not because
-    /// the connection can never complete for unrelated reasons.
+    /// the connection can never complete for unrelated reasons. Also verifies
+    /// the server sends a HandshakeAck(accepted) verdict frame.
     /// </summary>
     [Fact(Timeout = 25000)]
-    public async Task Server_WithNonce_Accepts_CorrectNonce()
+    public async Task Server_WithNonce_Accepts_CorrectNonce_AndSendsAck()
     {
         var name = UniquePipeName();
         var server = new PipeServer(NullLogger<PipeServer>.Instance) { PipeName = name };
@@ -110,6 +111,66 @@ public sealed class PipeServerHandshakeTests
                 "Correct nonce was NOT accepted — handshake verification is broken.");
             accepted = await connected.Task;
 
+            Assert.True(server.IsClientConnected);
+
+            // The verdict frame must arrive (order relative to the connected event is
+            // unspecified, so poll briefly).
+            var ack = await ReadFrameWithDeadlineAsync(client, TimeSpan.FromSeconds(5));
+            Assert.NotNull(ack);
+            Assert.Equal(IpcPayloadType.HandshakeAck, ack!.Value.Type);
+            Assert.Equal(0x01, ack.Value.Payload[0]);
+        }
+        finally
+        {
+            if (accepted is not null) await accepted.DisposeAsync();
+            await server.StopAsync();
+            await server.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// A client that connects and never sends the handshake must be dropped by the
+    /// handshake timeout instead of wedging the single pipe instance forever; the
+    /// server must then go on to accept a legitimate client.
+    /// </summary>
+    [Fact(Timeout = 20000)]
+    public async Task Server_SilentClient_TimesOut_AndAcceptsNextClient()
+    {
+        var name = UniquePipeName();
+        var server = new PipeServer(NullLogger<PipeServer>.Instance)
+        {
+            PipeName = name,
+            HandshakeTimeout = TimeSpan.FromMilliseconds(500),
+        };
+        var nonce = new byte[32];
+        new Random(3).NextBytes(nonce);
+        server.SetNonce(nonce);
+        PipeConnection? accepted = null;
+        try
+        {
+            var connected = new TaskCompletionSource<PipeConnection>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            server.ClientConnected += c => connected.TrySetResult(c);
+            server.Start();
+
+            // Silent client: connects, sends nothing, holds the pipe instance.
+            using var silent = await ConnectToListenerAsync(name);
+
+            // It must eventually be dropped (reject ack or EOF), not held forever.
+            var verdict = await ReadFrameWithDeadlineAsync(silent, TimeSpan.FromSeconds(5));
+            if (verdict is { } frame)
+            {
+                Assert.Equal(IpcPayloadType.HandshakeAck, frame.Type);
+                Assert.Equal(0x00, frame.Payload[0]);
+            }
+
+            // And the single pipe instance must be free again for a real client.
+            using var legit = await ConnectToListenerAsync(name);
+            await HandshakeAsync(legit, nonce);
+            var winner = await Task.WhenAny(connected.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.True(winner == connected.Task,
+                "Server did not accept a legitimate client after dropping a silent one.");
+            accepted = await connected.Task;
             Assert.True(server.IsClientConnected);
         }
         finally
@@ -170,10 +231,10 @@ public sealed class PipeServerHandshakeTests
     }
 
     /// <summary>
-    /// Asserts the server closed the connection without accepting it: no frame
-    /// ever comes back (clean EOF), the pipe is broken (IOException), or — if
-    /// the read is still hanging after 3 seconds — the server accepted the
-    /// client, which violates the fail-closed contract.
+    /// Asserts the server closed the connection without accepting it: the only frame
+    /// allowed back is the HandshakeAck(rejected) verdict; anything else, a clean EOF
+    /// or broken pipe is also fine, and — if the read is still hanging after 3
+    /// seconds — the server accepted the client, which violates fail-closed.
     /// </summary>
     private static async Task AssertConnectionClosedWithoutAcceptanceAsync(
         NamedPipeClientStream client, PipeServer server)
@@ -185,7 +246,9 @@ public sealed class PipeServerHandshakeTests
         try
         {
             var frame = await readTask;
-            Assert.True(frame is null, "Fail-closed violated: server returned a frame to an unauthenticated client.");
+            if (frame is null) return; // clean EOF = rejection
+            Assert.Equal(IpcPayloadType.HandshakeAck, frame.Value.Type);
+            Assert.Equal(0x00, frame.Value.Payload[0]); // explicit reject verdict
         }
         catch (IOException)
         {
@@ -194,5 +257,22 @@ public sealed class PipeServerHandshakeTests
         }
 
         Assert.False(server.IsClientConnected);
+    }
+
+    /// <summary>Reads one frame or returns null when nothing arrives within the deadline.</summary>
+    private static async Task<(IpcPayloadType Type, byte[] Payload)?> ReadFrameWithDeadlineAsync(
+        NamedPipeClientStream client, TimeSpan deadline)
+    {
+        var readTask = IpcProtocol.ReadFrameAsync(client);
+        var winner = await Task.WhenAny(readTask, Task.Delay(deadline));
+        if (winner != readTask) return null;
+        try
+        {
+            return await readTask;
+        }
+        catch (IOException)
+        {
+            return null; // pipe torn down = no frame
+        }
     }
 }

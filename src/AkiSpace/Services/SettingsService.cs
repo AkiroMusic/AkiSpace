@@ -46,11 +46,17 @@ public sealed class AppSettings
     /// <summary>Connection mode: StandardRdp (different user) or ChildSession (same user, BetterGI style).</summary>
     public ConnectionMode ConnectionMode { get; set; } = ConnectionMode.StandardRdp;
 
-    /// <summary>Username for the clone session (standard RDP multi-session mode).</summary>
+    /// <summary>
+    /// Username for the clone session (standard RDP multi-session mode).
+    /// </summary>
     public string CloneUsername { get; set; } = "AkiSpaceUser";
 
-    /// <summary>Password for the clone session account.</summary>
-    public string ClonePassword { get; set; } = "lb33";
+    /// <summary>
+    /// Password for the clone session account. Empty by default — a shipped default
+    /// credential is a known-password backdoor; ConnectAsync prompts for it on first
+    /// Standard-RDP connect and it is DPAPI-encrypted at rest.
+    /// </summary>
+    public string ClonePassword { get; set; } = "";
 
     /// <summary>Minimize to system tray instead of taskbar.</summary>
     public bool MinimizeToTray { get; set; } = true;
@@ -161,18 +167,34 @@ public sealed class SettingsService
 
     private void SaveCore(AppSettings settings)
     {
-        // Encrypt the clone password before writing; SaveCore is always called
-        // with a fresh clone so mutating the input here is safe.
+        // Persist a COPY with the clone password DPAPI-protected. The input object
+        // is the live _settings instance (Update assigns it before calling us), so
+        // mutating it in place would replace the in-memory plaintext password with
+        // the wrapped blob and break the next RDP connect in this process.
+        AppSettings toPersist = settings;
         if (!string.IsNullOrEmpty(settings.ClonePassword)
             && !settings.ClonePassword.StartsWith(SettingsProtection.Prefix, StringComparison.Ordinal))
         {
-            settings.ClonePassword = SettingsProtection.Protect(settings.ClonePassword);
+            toPersist = Clone(settings);
+            toPersist.ClonePassword = SettingsProtection.Protect(settings.ClonePassword);
         }
 
         var tmpPath = _filePath + ".tmp";
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
-        File.WriteAllText(tmpPath, json);
-        File.Move(tmpPath, _filePath, overwrite: true);
+        var json = JsonSerializer.Serialize(toPersist, JsonOptions);
+        try
+        {
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, _filePath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // _settings was already committed by Update, so memory is now ahead of
+            // disk. Surface the divergence and remove the stale temp file, then let
+            // the caller's error handling run.
+            _logger.LogError(ex, "Settings write failed; in-memory settings are ahead of disk at {Path}", _filePath);
+            try { File.Delete(tmpPath); } catch { /* best-effort */ }
+            throw;
+        }
     }
 
     private static AppSettings Clone(AppSettings src)

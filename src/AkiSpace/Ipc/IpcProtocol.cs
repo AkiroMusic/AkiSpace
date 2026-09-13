@@ -17,6 +17,13 @@ public enum IpcPayloadType : byte
 
     /// <summary>Handshake frame: 32-byte nonce for pipe authentication (client -> server).</summary>
     Handshake = 4,
+
+    /// <summary>
+    /// Handshake verdict frame: 1-byte flag (server -> client). 0x01 = nonce accepted,
+    /// 0x00 = rejected. Lets the client distinguish an explicit rejection (retrying
+    /// with the same nonce is pointless) from a network drop (retry may succeed).
+    /// </summary>
+    HandshakeAck = 5,
 }
 
 /// <summary>A single accumulated relative mouse movement sample.</summary>
@@ -41,6 +48,12 @@ public static class IpcProtocol
 {
     public const int FrameHeaderLength = 5;
     public const int MaxPayloadLength = 1 << 20; // 1 MB
+
+    /// <summary>HandshakeAck payload meaning the nonce was accepted.</summary>
+    public static readonly byte[] HandshakeAccepted = { 0x01 };
+
+    /// <summary>HandshakeAck payload meaning the nonce was rejected.</summary>
+    public static readonly byte[] HandshakeRejected = { 0x00 };
 
     /// <summary>Writes a single frame to the stream.</summary>
     public static async Task WriteFrameAsync(Stream stream, IpcPayloadType type, ReadOnlyMemory<byte> payload, CancellationToken ct = default)
@@ -96,6 +109,13 @@ public static class IpcProtocol
 
     public static byte[] SerializeBatch(RelativeMouseBatch batch)
     {
+        // A silent (ushort) cast would wrap counts > 65535 to 0, producing a batch
+        // the peer decodes as empty; the 1 MB frame guard alone does not catch it
+        // (65535 samples of 16 bytes is well under 1 MB).
+        if (batch.Samples.Length > ushort.MaxValue)
+            throw new InvalidOperationException(
+                $"Batch sample count {batch.Samples.Length} exceeds the wire format maximum {ushort.MaxValue}");
+
         // [2-byte count][8-byte firstSequence][8-byte baseTicks]
         //   then count * (4-byte deltaX + 4-byte deltaY + 8-byte timestampTicks)
         var size = 2 + 8 + 8 + batch.Samples.Length * 16;

@@ -52,3 +52,5 @@ publish/
 
 # Tooling/session state
 .omo/
+.codegraph/
+.zcode/

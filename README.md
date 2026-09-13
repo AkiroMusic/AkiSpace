@@ -109,7 +109,7 @@ Back in AkiSpace → "Environment Check/Repair" → "Recheck". All should show �
 AkiSpace's "One-Click Fix" installs a **single** inbound firewall rule. Windows Firewall never inspects loopback (`127.0.0.1`/`::1`) traffic — it is permitted at a higher WFP sub-layer — so an "allow 127.0.0.1" rule would be a no-op. Instead the fix adds one **block** rule on the RDP port (3389 or the configured port) with `remoteip=any`, which stops every genuine remote client while loopback RDP keeps working via the firewall's loopback bypass. Block rules also take precedence over allow rules, so this reliably closes the port remotely. It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so it can't shadow the block. Both Standard RDP and Child Session use this port.
 
 Other security defaults (current release v0.1.6; hardening landed earlier in v0.1.3):
-- **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. The default placeholder `lb33` triggers a `Warning` log on every Connect until the user changes it in Settings.
+- **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. There is no built-in default password: the first Standard-RDP connect prompts for it and it is persisted DPAPI-encrypted.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
 
@@ -296,7 +296,7 @@ Restart-Service TermService -Force
 AkiSpace 的「一键修复」只下发**一条**防火墙规则。Windows 防火墙从不检查回环（`127.0.0.1`/`::1`）流量——它在更高的 WFP 子层被放行——所以「允许 127.0.0.1」这类规则其实是空操作。取而代之，修复会在 RDP 端口（3389 或「设置」中配置的端口）上添加一条 `remoteip=any` 的入站**阻断**规则：它拦下所有真正来自远端的连接，而回环 RDP 凭借防火墙的回环旁路照常工作。阻断规则的优先级高于允许规则，因此能可靠地对远端关闭该端口。如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），以免它干扰阻断效果。标准 RDP 模式和子会话模式都通过此端口连接。
 
 v0.1.6（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认：
-- **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。默认占位符 `lb33` 会在每次「连接」时打 `Warning` 日志，直到用户在「设置」中改掉。
+- **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。不再内置默认密码：首次「连接」标准 RDP 时会弹窗询问并加密保存。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。
 

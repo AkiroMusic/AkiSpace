@@ -255,7 +255,7 @@ public sealed class SettingsDialog : Form
         _txtClonePassword.UseSystemPasswordChar = true;
 
         AddRow(grid, 0, "分身账户用户名", _txtCloneUsername, "标准 RDP 模式必填，如 AkiSpaceUser");
-        AddRow(grid, 1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储，默认 lb33 为占位符");
+        AddRow(grid, 1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储；留空则首次连接标准 RDP 时询问");
 
         card.ContentControls.Add(grid);
     }
