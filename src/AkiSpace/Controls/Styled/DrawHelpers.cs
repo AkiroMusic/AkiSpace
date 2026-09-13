@@ -1,5 +1,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Windows.Forms;
+using AkiSpace.Common;
 
 namespace AkiSpace.Controls.Styled;
 
@@ -8,6 +10,24 @@ namespace AkiSpace.Controls.Styled;
 /// </summary>
 internal static class DrawHelpers
 {
+    /// <summary>
+    /// Resolves an OPAQUE backdrop color for a styled control: Surface1 when it sits
+    /// inside a DoubleBezelCard, otherwise the form-level BgBase.
+    /// Styled controls must never use BackColor=Transparent: combined with
+    /// UserPaint+OptimizedDoubleBuffer it disables real double buffering and paints
+    /// stale buffer contents over the screen (the "garbled, flickering, unreadable
+    /// dialog" bug). Solid parent-matching colors look identical in this design.
+    /// </summary>
+    public static Color ResolveBackdrop(Control control)
+    {
+        for (var p = control.Parent; p is not null; p = p.Parent)
+        {
+            if (p is DoubleBezelCard)
+                return ThemeManager.Current.Surface1;
+        }
+        return ThemeManager.Current.BgBase;
+    }
+
     /// <summary>
     /// Creates a rounded-rectangle GraphicsPath. Clamps the diameter to
     /// min(width, height) to prevent self-intersecting paths.

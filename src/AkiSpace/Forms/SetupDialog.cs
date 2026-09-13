@@ -65,7 +65,7 @@ public sealed class SetupDialog : Form
         var mainPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
             Padding = new Padding(ThemeTokens.Space.S6), // 24px
         };
 
@@ -75,7 +75,7 @@ public sealed class SetupDialog : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
 
         // --- Checks Card ---
@@ -106,14 +106,14 @@ public sealed class SetupDialog : Form
             Dock = DockStyle.Bottom,
             Height = 70,
             Padding = new Padding(ThemeTokens.Space.S6, ThemeTokens.Space.S4, ThemeTokens.Space.S6, ThemeTokens.Space.S4),
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
         var btnFlow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
 
         _btnCheck.Text = "重新检查";
@@ -148,12 +148,15 @@ public sealed class SetupDialog : Form
         _listView.Font = ThemeManager.Current.GetFontSans(12f);
         _listView.HeaderStyle = ColumnHeaderStyle.Nonclickable;
         _listView.OwnerDraw = true;
-        _listView.Columns.Add("检查项", 300);
-        _listView.Columns.Add("状态", 100);
-        _listView.Columns.Add("详情", 300);
+        // Total width must fit the card's inner width (720 - 2*24 padding) or the
+        // details column gets clipped behind a horizontal scrollbar.
+        _listView.Columns.Add("检查项", 240);
+        _listView.Columns.Add("状态", 90);
+        _listView.Columns.Add("详情", 290);
         _listView.Height = 400;
 
         card.ContentControls.Add(_listView);
+        card.Controls.SetChildIndex(_listView, 0); // Dock=Fill must be index 0: dock layout processes children in REVERSE z-order, so a later-added Fill control is overlapped by the header panel
     }
 
     private void BuildHomeGuideCard()
@@ -178,7 +181,7 @@ public sealed class SetupDialog : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
 
@@ -201,7 +204,7 @@ public sealed class SetupDialog : Form
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Margin = new Padding(0, 0, 0, ThemeTokens.Space.S4),
         };
 
@@ -236,6 +239,7 @@ public sealed class SetupDialog : Form
         flow.Controls.Add(_btnRecheckAfterInstall);
 
         _homeGuideCard.ContentControls.Add(flow);
+        _homeGuideCard.Controls.SetChildIndex(flow, 0); // same dock-order fix
     }
 
     private static void StyleGuideButton(GhostButton btn, string text)
@@ -298,6 +302,10 @@ public sealed class SetupDialog : Form
                 wrapperInstallCheck = check;
         }
         _listView.EndUpdate();
+        // Force scroll back to the first row: the control can retain a stale scroll
+        // offset from the placeholder render, hiding the first checks entirely.
+        if (_listView.Items.Count > 0)
+            _listView.TopItem = _listView.Items[0];
         _logger.LogInformation("Environment checks completed");
 
         var showHomeGuide = wrapperInstallCheck is { Pass: false };
@@ -357,7 +365,7 @@ public sealed class SetupDialog : Form
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
             Padding = new Padding(ThemeTokens.Space.S6),
             AutoScroll = true,
         };
@@ -367,7 +375,7 @@ public sealed class SetupDialog : Form
             Text = prompt,
             AutoSize = true,
             ForeColor = ThemeManager.Current.TextPrimary,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
             Font = ThemeManager.Current.GetFontSans(13f),
             MaximumSize = new Size(520, 0),
             Margin = new Padding(0, 0, 0, ThemeTokens.Space.S6),
@@ -386,7 +394,7 @@ public sealed class SetupDialog : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
 
         var btnOk = new PrimaryButton { Text = "继续", Size = new Size(100, 40), DialogResult = DialogResult.OK };

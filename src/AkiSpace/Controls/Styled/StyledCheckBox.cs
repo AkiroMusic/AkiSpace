@@ -17,10 +17,12 @@ public sealed class StyledCheckBox : CheckBox
 
     public StyledCheckBox()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        // OPAQUE backdrop only — see DrawHelpers.ResolveBackdrop (Transparent +
+        // UserPaint + OptimizedDoubleBuffer composited stale buffer garbage).
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        BackColor = Color.Transparent;
+        BackColor = ThemeManager.Current.Surface1;
         Font = ThemeManager.Current.GetFontSans(13f, FontStyle.Regular);
         ForeColor = ThemeManager.Current.TextPrimary;
         AutoSize = true;
@@ -32,6 +34,12 @@ public sealed class StyledCheckBox : CheckBox
         MouseEnter += (_, _) => { _hovered = true; _timer.Start(); };
         MouseLeave += (_, _) => { _hovered = false; _timer.Start(); };
         CheckedChanged += (_, _) => _timer.Start();
+    }
+
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent is not null) BackColor = DrawHelpers.ResolveBackdrop(this);
     }
 
     private void Animate()

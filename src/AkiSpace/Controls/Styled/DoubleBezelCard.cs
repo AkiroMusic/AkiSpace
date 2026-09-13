@@ -25,10 +25,29 @@ public sealed class DoubleBezelCard : Panel
     private Control? _headerActionControl;
     private bool _hasSubtitle = false;
 
+    // The card invalidates itself at ~60fps while hover-animating. Without
+    // WS_CLIPCHILDREN that repaint ERASES child controls (the check list, buttons,
+    // inputs), which only redraw when their own invalidation fires — observed as
+    // constantly flickering, half-erased ("破碎") dialog content.
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.Style |= 0x02000000; // WS_CLIPCHILDREN
+            return cp;
+        }
+    }
+
     public DoubleBezelCard()
     {
-        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.Transparent;
+        // OPAQUE backdrop = BgBase (the form background): OnPaint fills the rounded
+        // Surface1 body over it, so the rounded corners blend invisibly. The previous
+        // Transparent backcolor + UserPaint + OptimizedDoubleBuffer combination
+        // disabled real double buffering and composited stale buffer garbage —
+        // flickering, unreadable dialogs.
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        BackColor = ThemeManager.Current.BgBase;
         Padding = new Padding(ThemeTokens.Space.S6); // 24px
         Margin = new Padding(0, 0, 0, ThemeTokens.Space.S6); // margin-bottom 24px
 
@@ -48,7 +67,7 @@ public sealed class DoubleBezelCard : Panel
     {
         _headerPanel.Dock = DockStyle.Top;
         _headerPanel.AutoSize = true;
-        _headerPanel.BackColor = Color.Transparent;
+        _headerPanel.BackColor = ThemeManager.Current.Surface1;
         _headerPanel.Padding = new Padding(0, 0, 0, ThemeTokens.Space.S2); // 8px default, adjusted in UpdateHeader
 
         var headerLayout = new FlowLayoutPanel
@@ -57,20 +76,20 @@ public sealed class DoubleBezelCard : Panel
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
         };
 
         var titleContainer = new Panel
         {
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
         };
         var titleLayout = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
         };
 
         // Title: Fraunces 20px 600, line-height 1.25, letter-spacing -0.01em
@@ -78,13 +97,13 @@ public sealed class DoubleBezelCard : Panel
         _titleLabel.Font = ThemeManager.Current.GetFontDisplay(ThemeTokens.Typography.CardTitle, FontStyle.Bold);
         _titleLabel.ForeColor = ThemeManager.Current.TextPrimary;
         _titleLabel.Margin = new Padding(0, 0, 0, 4);
-        _titleLabel.BackColor = Color.Transparent;
+        _titleLabel.BackColor = ThemeManager.Current.Surface1;
 
         // Subtitle: 12px tertiary, line-height 1.5
         _subtitleLabel.AutoSize = true;
         _subtitleLabel.Font = ThemeManager.Current.GetFontSans(ThemeTokens.Typography.CardSubtitle, FontStyle.Regular);
         _subtitleLabel.ForeColor = ThemeManager.Current.TextTertiary;
-        _subtitleLabel.BackColor = Color.Transparent;
+        _subtitleLabel.BackColor = ThemeManager.Current.Surface1;
         _subtitleLabel.Visible = false;
 
         titleLayout.Controls.Add(_titleLabel);
@@ -92,7 +111,7 @@ public sealed class DoubleBezelCard : Panel
         titleContainer.Controls.Add(titleLayout);
 
         _headerActionPanel.AutoSize = true;
-        _headerActionPanel.BackColor = Color.Transparent;
+        _headerActionPanel.BackColor = ThemeManager.Current.Surface1;
         _headerActionPanel.Dock = DockStyle.Right;
 
         headerLayout.Controls.Add(titleContainer);

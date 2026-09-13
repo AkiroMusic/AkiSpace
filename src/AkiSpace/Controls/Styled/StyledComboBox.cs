@@ -17,11 +17,13 @@ public sealed class StyledComboBox : ComboBox
 
     public StyledComboBox()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        // OPAQUE backdrop only — see DrawHelpers.ResolveBackdrop (Transparent +
+        // UserPaint + OptimizedDoubleBuffer composited stale buffer garbage).
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         DrawMode = DrawMode.OwnerDrawFixed;
         DropDownStyle = ComboBoxStyle.DropDownList;
         FlatStyle = FlatStyle.Flat;
-        BackColor = Color.Transparent;
+        BackColor = ThemeManager.Current.Surface2;
         Font = ThemeManager.Current.GetFontSans(13f, FontStyle.Regular);
         ForeColor = ThemeManager.Current.TextPrimary;
         Size = new Size(200, 40);
@@ -34,6 +36,12 @@ public sealed class StyledComboBox : ComboBox
         Leave += (_, _) => { _focused = false; _timer.Start(); };
         DropDown += (_, _) => Invalidate();
         DropDownClosed += (_, _) => Invalidate();
+    }
+
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent is not null) BackColor = DrawHelpers.ResolveBackdrop(this);
     }
 
     private void Animate()

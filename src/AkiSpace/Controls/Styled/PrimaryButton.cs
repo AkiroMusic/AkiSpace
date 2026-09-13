@@ -18,10 +18,12 @@ public sealed class PrimaryButton : Button
 
     public PrimaryButton()
     {
-        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        // OPAQUE backdrop only — see DrawHelpers.ResolveBackdrop (Transparent +
+        // UserPaint + OptimizedDoubleBuffer composited stale buffer garbage).
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        BackColor = Color.Transparent;
+        BackColor = ThemeManager.Current.Surface1;
         ForeColor = Color.Transparent; // We paint text ourselves
         Font = ThemeManager.Current.GetFontSans(15f, FontStyle.Bold);
         Size = new Size(120, 40);
@@ -34,6 +36,12 @@ public sealed class PrimaryButton : Button
         MouseLeave += (_, _) => { _hovered = false; _timer.Start(); };
         MouseDown += (_, _) => { _pressed = true; Invalidate(); };
         MouseUp += (_, _) => { _pressed = false; Invalidate(); };
+    }
+
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent is not null) BackColor = DrawHelpers.ResolveBackdrop(this);
     }
 
     private void Animate()

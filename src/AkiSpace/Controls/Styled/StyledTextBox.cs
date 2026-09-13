@@ -17,9 +17,11 @@ public sealed class StyledTextBox : TextBox
 
     public StyledTextBox()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        // OPAQUE backdrop only — see DrawHelpers.ResolveBackdrop (Transparent +
+        // UserPaint + OptimizedDoubleBuffer composited stale buffer garbage).
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         BorderStyle = BorderStyle.None;
-        BackColor = Color.Transparent;
+        BackColor = ThemeManager.Current.Surface2;
         Font = ThemeManager.Current.GetFontSans(13f, FontStyle.Regular);
         ForeColor = ThemeManager.Current.TextPrimary;
         Padding = new Padding(12, 8, 12, 8);
