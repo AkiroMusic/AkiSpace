@@ -66,35 +66,15 @@ public sealed class EnvironmentVerifier
     }
 
     /// <summary>
-    /// Async variant: runs the synchronous checks inline (fast), then
-    /// probes the listener on a worker thread (up to ~10s on a cold listener)
-    /// and patches the returned list in place. Returns the fully populated list.
+    /// Async variant for UI callers: runs ALL checks on a worker thread and returns
+    /// the fully populated list. Everything here is thread-safe (registry reads,
+    /// ServiceController, firewall rule query, WTS queries, TCP probe) — but the
+    /// listener probe alone blocks ~5s when the listener is down, so the batch must
+    /// never run on the UI thread.
     /// </summary>
     public async Task<List<EnvCheckResult>> RunAllChecksAsync(CancellationToken ct = default)
     {
-        var results = RunAllChecks();
-        // Find the listener check (index 7) and replace with a "checking..." placeholder.
-        for (var i = 0; i < results.Count; i++)
-        {
-            if (results[i].Name.Contains("RDP 监听"))
-            {
-                results[i] = new EnvCheckResult(results[i].Name, false, "检查中...");
-                break;
-            }
-        }
-        var active = await _sessionManager.IsRdpListenerActiveAsync(ct);
-        var port = _sessionManager.GetConfiguredRdpPort();
-        for (var i = 0; i < results.Count; i++)
-        {
-            if (results[i].Name.Contains("RDP 监听"))
-            {
-                results[i] = new EnvCheckResult(
-                    results[i].Name, active,
-                    active ? $"端口 {port} 正在监听" : "监听失败（TermService 未运行或未解锁）");
-                break;
-            }
-        }
-        return results;
+        return await Task.Run(() => RunAllChecks(), ct).ConfigureAwait(false);
     }
 
     // Listener probe is delegated to ChildSessionManager.

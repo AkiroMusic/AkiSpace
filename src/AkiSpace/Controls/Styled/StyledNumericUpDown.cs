@@ -19,7 +19,11 @@ public sealed class StyledNumericUpDown : NumericUpDown
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
         BorderStyle = BorderStyle.None;
-        BackColor = Color.Transparent;
+        // MUST be a solid color: UpDownBase.set_BackColor propagates the value to its
+        // inner TextBox, where Color.Transparent throws ArgumentException
+        // ("控件不支持透明的背景色") — this made SettingsDialog fail inside its
+        // constructor, so the dialog could never open at all.
+        BackColor = ThemeManager.Current.Surface2;
         Font = ThemeManager.Current.GetFontMono(20f, FontStyle.Bold);
         ForeColor = ThemeManager.Current.TextPrimary;
         TextAlign = HorizontalAlignment.Center;
