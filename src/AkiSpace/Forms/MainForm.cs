@@ -40,10 +40,7 @@ public sealed class MainForm : Form
     private readonly ProcessLauncher _processLauncher;
     private readonly CursorCapture _cursorCapture;
     private readonly MouseForwarder _mouseForwarder;
-    private readonly AgentRunner _agentRunner;
     private readonly PipeServer _pipeServer;
-    private byte[]? _agentNonce;
-
     // UI — standard controls
     private readonly Label _lblChildSession = new();
     private readonly Label _lblConnection = new();
@@ -69,6 +66,26 @@ public sealed class MainForm : Form
     private bool _closing;
     private bool _isConnected;
 
+    // True between a ConnectAsync call and its terminal state (login complete /
+    // connection failed / early return). Gates re-entrant connects and hotkey toggles.
+    private bool _connecting;
+
+    // Collapse the ActiveX retry loop's repeated failure events (one per attempt,
+    // ~1-2s apart) into a single dialog; distinct or later failures still notify.
+    private string? _lastFailureReason;
+    private long _lastFailureDialogAt;
+
+    // Guards tray-icon disposal across ExitApplication → Application.Exit →
+    // OnFormClosing re-entry.
+    private bool _trayDisposed;
+
+    // RDP window handles snapshotted ON the UI thread (RefreshRdpHandles) so the
+    // mouse-forwarder's 200 Hz poller can do pure-Win32 bounds/focus checks without
+    // touching Control.Handle (a cross-thread handle access that only survives
+    // because WinForms' check is debugger-only).
+    private IntPtr _rdpHostHandle;
+    private IntPtr _rdpInputWindowHandle;
+
     private string _cloneUsername => _settingsService.Current.CloneUsername;
     private string _clonePassword => _settingsService.Current.ClonePassword;
 
@@ -86,7 +103,6 @@ public sealed class MainForm : Form
         EnvironmentVerifier environmentVerifier,
         ProcessLauncher processLauncher,
         CursorCapture cursorCapture,
-        AgentRunner agentRunner,
         PipeServer pipeServer,
         MouseForwarder mouseForwarder)
     {
@@ -97,7 +113,6 @@ public sealed class MainForm : Form
         _environmentVerifier = environmentVerifier;
         _processLauncher = processLauncher;
         _cursorCapture = cursorCapture;
-        _agentRunner = agentRunner;
         _pipeServer = pipeServer;
         _mouseForwarder = mouseForwarder;
 
@@ -301,6 +316,7 @@ public sealed class MainForm : Form
         _mouseForwarder.SetGameMouseModeEnabled(_settingsService.Current.GameMouseModeEnabled);
 
         RegisterGlobalHotkeys();
+        SweepStaleNonceFiles();
         RefreshStatus();
 
         if (_settingsService.Current.AutoConnect)
@@ -317,15 +333,28 @@ public sealed class MainForm : Form
     {
         _closing = true;
         _statusTimer?.Stop();
+        _statusTimer?.Dispose();
+        _statusTimer = null;
         _mouseForwarder.SetGameMouseModeEnabled(false);
-        _rdpHost?.DisconnectSession();
+        TearDownRdpHost();
 
         UnregisterGlobalHotkeys();
 
-        _trayIcon.Visible = false;
-        _trayIcon.Dispose();
+        // Idempotent: ExitApplication() → Application.Exit() re-enters this handler,
+        // and touching a disposed NotifyIcon would throw on the second pass.
+        if (!_trayDisposed)
+        {
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _trayDisposed = true;
+        }
+        _trayMenu.Dispose();
 
-        if (_settingsService.Current.LogoffOnExit && _sessionManager.TryGetChildSessionId() is uint sid)
+        // A synchronous WTS logoff must not run on the OS-shutdown or task-manager
+        // kill path — only log off when the user explicitly closed/exited the app.
+        if (e.CloseReason is CloseReason.UserClosing or CloseReason.ApplicationExitCall
+            && _settingsService.Current.LogoffOnExit
+            && _sessionManager.TryGetChildSessionId() is uint sid)
         {
             _sessionManager.LogoffChildSession(sid);
         }
@@ -400,6 +429,7 @@ public sealed class MainForm : Form
 
     private void ToggleConnect()
     {
+        if (_connecting) return;
         if (_isConnected)
         {
             Disconnect();
@@ -425,14 +455,15 @@ public sealed class MainForm : Form
     private void ExitApplication()
     {
         _closing = true;
-        _trayIcon.Visible = false;
-        _trayIcon.Dispose();
+        // Tray/icon/timer/logoff cleanup happens once in OnFormClosing, which
+        // Application.Exit re-enters.
         Application.Exit();
     }
 
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        if (_trayDisposed || _closing) return;
         if (WindowState == FormWindowState.Minimized && _settingsService.Current.MinimizeToTray)
         {
             Hide();
@@ -445,16 +476,29 @@ public sealed class MainForm : Form
 
     private async Task ConnectAsync()
     {
+        if (_connecting || _isConnected) return;
         try
         {
-            _lblConnection.Text = "连接: 正在准备...";
-
             var settings = _settingsService.Current;
 
-            if (settings.ClonePassword == "lb33")
+            // Standard-RDP mode needs the clone account's password. There is no
+            // built-in default anymore; prompt on first use and persist it DPAPI-
+            // protected through the settings service.
+            if (settings.ConnectionMode != ConnectionMode.ChildSession
+                && string.IsNullOrEmpty(settings.ClonePassword))
             {
-                _logger.LogWarning("ClonePassword is the built-in default 'lb33' — change it in Settings before connecting to a real account");
+                var password = PromptForClonePassword();
+                if (string.IsNullOrEmpty(password))
+                {
+                    _lblConnection.Text = "连接: 未提供密码";
+                    return;
+                }
+                _settingsService.Update(s => s.ClonePassword = password);
+                settings = _settingsService.Current;
             }
+
+            _connecting = true;
+            _lblConnection.Text = "连接: 正在准备...";
 
             if (settings.ConnectionMode != ConnectionMode.ChildSession
                 && !await _sessionManager.IsRdpListenerActiveAsync())
@@ -465,11 +509,11 @@ public sealed class MainForm : Form
                     "2) 真未监听 — 运行「环境检查/修复」→「一键修复」\n" +
                     "3) 防火墙/杀软拦截 127.0.0.1:3389",
                     "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                _lblConnection.Text = "连接: RDP 未就绪";
+                ResetConnectUi("连接: RDP 未就绪");
                 return;
             }
 
-            _viewerPanel.Controls.Clear();
+            TearDownRdpHost();
             _rdpHost = new RdpActiveXHost(_loggerFactory.CreateLogger<RdpActiveXHost>());
             _rdpHost.LoginCompleted += OnRdpLoginComplete;
             _rdpHost.ConnectionFailed += OnRdpConnectionFailed;
@@ -487,54 +531,60 @@ public sealed class MainForm : Form
 
             BeginInvoke(new Action(() => BeginInvoke(new Action(() =>
             {
-                if (_rdpHost is null || _rdpHost.IsDisposed) return;
-
-                if (settings.ConnectionMode == ConnectionMode.ChildSession)
+                try
                 {
-                    var hookCheck = _environmentVerifier.CheckRdpWrapperHook();
-                    if (!hookCheck.Pass)
+                    if (_rdpHost is null || _rdpHost.IsDisposed) return;
+
+                    if (settings.ConnectionMode == ConnectionMode.ChildSession)
                     {
-                        _logger.LogWarning("RDP Wrapper hook detected; child session will fail: {Detail}", hookCheck.Detail);
-                        MessageBox.Show(
-                            "检测到 RDP Wrapper (TermWrap.dll) 已 hook TermService。\n\n"
-                            + "BetterGI 官方文档明确说明：RDP Wrapper 与桌面分身（子会话）功能不兼容，"
-                            + "两者不能同时使用。RDP Wrapper 的 hook 会导致子会话 broker 无法创建会话，"
-                            + "表现为「远程桌面无法连接到远程计算机 (516)」。\n\n"
-                            + "请按以下步骤解决：\n"
-                            + "1. 在 AkiSpace 中打开「环境检查/修复」\n"
-                            + "2. 点击「一键修复」（最新版会禁用 RDP Wrapper 并恢复 termsrv.dll）\n"
-                            + "3. 等待 TermService 重启完成\n"
-                            + "4. 重新尝试子会话连接\n\n"
-                            + "RDP Wrapper 和 AkiSpace 子会话功能重复（二者都是为多用户场景设计），"
-                            + "只能二选一。建议直接使用 AkiSpace 子会话。",
-                            "AkiSpace — RDP Wrapper 与子会话冲突",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        return;
+                        var hookCheck = _environmentVerifier.CheckRdpWrapperHook();
+                        if (!hookCheck.Pass)
+                        {
+                            _logger.LogWarning("RDP Wrapper hook detected; child session will fail: {Detail}", hookCheck.Detail);
+                            MessageBox.Show(
+                                "检测到 RDP Wrapper (TermWrap.dll) 已 hook TermService。\n\n"
+                                + "BetterGI 官方文档明确说明：RDP Wrapper 与桌面分身（子会话）功能不兼容，"
+                                + "两者不能同时使用。RDP Wrapper 的 hook 会导致子会话 broker 无法创建会话，"
+                                + "表现为「远程桌面无法连接到远程计算机 (516)」。\n\n"
+                                + "请按以下步骤解决：\n"
+                                + "1. 在 AkiSpace 中打开「环境检查/修复」\n"
+                                + "2. 点击「一键修复」（最新版会禁用 RDP Wrapper 并恢复 termsrv.dll）\n"
+                                + "3. 等待 TermService 重启完成\n"
+                                + "4. 重新尝试子会话连接\n\n"
+                                + "RDP Wrapper 和 AkiSpace 子会话功能重复（二者都是为多用户场景设计），"
+                                + "只能二选一。建议直接使用 AkiSpace 子会话。",
+                                "AkiSpace — RDP Wrapper 与子会话冲突",
+                                MessageBoxButtons.OK,
+                                MessageBoxIcon.Warning);
+                            ResetConnectUi("连接: RDP Wrapper 冲突");
+                            return;
+                        }
+
+                        var enableResult = _sessionManager.EnableChildSessions();
+                        _logger.LogInformation("WTSEnableChildSessions(true) before connect returned {Result}", enableResult);
+
+                        _rdpHost.ConnectToChildSession(
+                            settings.DesktopWidth, settings.DesktopHeight, settings.ColorDepth,
+                            port, settings.SmartSizing,
+                            settings.SendSystemShortcutsToRemote, settings.AudioRedirected);
+                    }
+                    else
+                    {
+                        _rdpHost.Connect(
+                            settings.DesktopWidth, settings.DesktopHeight, settings.ColorDepth,
+                            port, settings.SmartSizing,
+                            settings.SendSystemShortcutsToRemote, settings.AudioRedirected,
+                            userName: _cloneUsername, password: _clonePassword,
+                            useChildSession: false);
                     }
                 }
-
-                if (settings.ConnectionMode == ConnectionMode.ChildSession)
+                catch (Exception ex)
                 {
-                    var enableResult = _sessionManager.EnableChildSessions();
-                    _logger.LogInformation("WTSEnableChildSessions(true) before connect returned {Result}", enableResult);
-                }
-
-                if (settings.ConnectionMode == ConnectionMode.ChildSession)
-                {
-                    _rdpHost.ConnectToChildSession(
-                        settings.DesktopWidth, settings.DesktopHeight, settings.ColorDepth,
-                        port, settings.SmartSizing,
-                        settings.SendSystemShortcutsToRemote, settings.AudioRedirected);
-                }
-                else
-                {
-                    _rdpHost.Connect(
-                        settings.DesktopWidth, settings.DesktopHeight, settings.ColorDepth,
-                        port, settings.SmartSizing,
-                        settings.SendSystemShortcutsToRemote, settings.AudioRedirected,
-                        userName: _cloneUsername, password: _clonePassword,
-                        useChildSession: false);
+                    // A throw here used to escape into Application.ThreadException and
+                    // leave the UI in a half-connected state; route it through the
+                    // normal reset instead.
+                    _logger.LogError(ex, "Deferred connect body failed");
+                    ResetConnectUi("连接: 连接失败");
                 }
             }))));
 
@@ -545,15 +595,95 @@ public sealed class MainForm : Form
             _btnGameMouse.Enabled = enableGameMouse;
             _btnGameMouse.Visible = enableGameMouse;
             _btnLaunch.Enabled = true;
-            _isConnected = true;
-            UpdateTrayIcon(true);
+            // Deliberately NO optimistic _isConnected=true here: the connect actually
+            // happens in the deferred BeginInvoke above (or its early-return paths).
+            // The real state lands via OnRdpLoginComplete and the RefreshStatus poll.
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Connect failed");
-            _lblConnection.Text = "连接: 连接失败";
+            ResetConnectUi("连接: 连接失败");
             MessageBox.Show($"连接失败：{ex.Message}", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>
+    /// Restores the buttons/status after a connect attempt ends without a session
+    /// (early return, connect exception, or reported connection failure).
+    /// </summary>
+    private void ResetConnectUi(string statusText)
+    {
+        _connecting = false;
+        _isConnected = false;
+        _btnConnect.Enabled = true;
+        _btnDisconnect.Enabled = false;
+        _btnTerminate.Enabled = false;
+        _btnGameMouse.Enabled = false;
+        _btnGameMouse.Text = "游戏鼠标";
+        _btnLaunch.Enabled = false;
+        _lblConnection.Text = statusText;
+        UpdateTrayIcon(false);
+    }
+
+    /// <summary>Modal password prompt for the clone account (first Standard-RDP connect).</summary>
+    private static string? PromptForClonePassword()
+    {
+        using var form = new Form
+        {
+            Text = "AkiSpace — 分身账户密码",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ClientSize = new Size(420, 150),
+            Font = new Font("Segoe UI", 9f),
+        };
+        var label = new Label
+        {
+            Text = "标准 RDP 模式需要分身账户的密码。\nAkiSpace 不再内置默认密码，请输入分身账户的密码\n（将使用 DPAPI 加密保存在本机设置中）：",
+            Location = new Point(12, 12),
+            Size = new Size(396, 60),
+        };
+        var textBox = new TextBox
+        {
+            PasswordChar = '●',
+            Location = new Point(12, 76),
+            Size = new Size(396, 24),
+        };
+        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Location = new Point(240, 110), Size = new Size(80, 28) };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(328, 110), Size = new Size(80, 28) };
+        form.Controls.AddRange(new Control[] { label, textBox, ok, cancel });
+        form.AcceptButton = ok;
+        form.CancelButton = cancel;
+        return form.ShowDialog() == DialogResult.OK ? textBox.Text : null;
+    }
+
+    /// <summary>
+    /// Removes and disposes the current RDP ActiveX host. Controls.Clear() does NOT
+    /// dispose children, so every reconnect previously leaked the AxHost, the MSTSC
+    /// COM object behind it and its event sink until process exit.
+    /// </summary>
+    private void TearDownRdpHost()
+    {
+        _rdpHostHandle = IntPtr.Zero;
+        _rdpInputWindowHandle = IntPtr.Zero;
+        if (_rdpHost is null) return;
+        var host = _rdpHost;
+        _rdpHost = null;
+        host.LoginCompleted -= OnRdpLoginComplete;
+        host.ConnectionFailed -= OnRdpConnectionFailed;
+        host.RequestedGoFullScreen -= OnRdpRequestFullScreen;
+        host.RequestedLeaveFullScreen -= OnRdpRequestLeaveFullScreen;
+        _viewerPanel.Controls.Remove(host);
+        try
+        {
+            host.DisconnectSession();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "RDP host disconnect during teardown failed (continuing to dispose)");
+        }
+        host.Dispose();
     }
 
     private void Disconnect()
@@ -561,16 +691,20 @@ public sealed class MainForm : Form
         _rdpHost?.DisconnectSession();
         _btnConnect.Enabled = true;
         _btnDisconnect.Enabled = false;
+        _btnTerminate.Enabled = false;
         _btnGameMouse.Enabled = false;
+        _btnGameMouse.Text = "游戏鼠标";
         _btnLaunch.Enabled = false;
         _mouseForwarder.SetGameMouseModeEnabled(false);
         _lblConnection.Text = "连接: 已断开";
+        _connecting = false;
         _isConnected = false;
         UpdateTrayIcon(false);
     }
 
     private void UpdateTrayIcon(bool connected)
     {
+        if (_trayDisposed) return;
         _trayIcon.Text = connected ? "AkiSpace - 已连接" : "AkiSpace - 未连接";
         _trayMenu.Items[0].Text = connected ? "断开分身" : "连接分身";
     }
@@ -590,16 +724,18 @@ public sealed class MainForm : Form
 
         if (_sessionManager.LogoffChildSession(sid.Value))
         {
-            _rdpHost?.DisconnectSession();
-            _viewerPanel.Controls.Clear();
-            _rdpHost = null;
+            TearDownRdpHost();
             _btnConnect.Enabled = true;
             _btnDisconnect.Enabled = false;
             _btnTerminate.Enabled = false;
             _btnGameMouse.Enabled = false;
+            _btnGameMouse.Text = "游戏鼠标";
             _btnLaunch.Enabled = false;
             _mouseForwarder.SetGameMouseModeEnabled(false);
             _lblConnection.Text = "连接: 子会话已终止";
+            _connecting = false;
+            _isConnected = false;
+            UpdateTrayIcon(false);
         }
         else
         {
@@ -627,10 +763,13 @@ public sealed class MainForm : Form
     {
         try
         {
-            _agentNonce = new byte[32];
-            System.Security.Cryptography.RandomNumberGenerator.Fill(_agentNonce);
+            // Server-scoped only: the pipe server holds the expected nonce for the
+            // handshake; keeping a second copy of the secret in this field for the
+            // process lifetime serves nothing.
+            var nonce = new byte[32];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(nonce);
 
-            _pipeServer.SetNonce(_agentNonce);
+            _pipeServer.SetNonce(nonce);
 
             // Standard-RDP mode: the agent runs under a DIFFERENT account, so the pipe DACL
             // must also admit the clone account SID (else its connect is denied before the
@@ -656,7 +795,7 @@ public sealed class MainForm : Form
             // Deliver the nonce out-of-band via a DACL-protected file instead of the command
             // line — argv leaks via the Task Scheduler task XML under %WINDIR%\System32\Tasks
             // and the child process PEB.
-            var nonceFilePath = WriteNonceToProtectedTempFile(_agentNonce);
+            var nonceFilePath = WriteNonceToProtectedTempFile(nonce);
             if (nonceFilePath is null)
             {
                 _logger.LogWarning("Failed to write nonce file; agent not launched");
@@ -761,6 +900,36 @@ public sealed class MainForm : Form
             "AkiSpace");
         Directory.CreateDirectory(dir);
         return dir;
+    }
+
+    /// <summary>
+    /// Deletes leftover nonce files from previous runs at startup. Normally the agent
+    /// consumes (read+delete) the file, but a launch that never got that far (crashed
+    /// or silently-skipped RunEx) would otherwise orphan a DACL-protected secret on
+    /// disk forever. At MainForm load no handshake can be in flight, so everything
+    /// matching the pattern is stale.
+    /// </summary>
+    private void SweepStaleNonceFiles()
+    {
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(NonceDirectory(), "nonce_*.bin"))
+            {
+                try
+                {
+                    File.Delete(file);
+                    _logger.LogInformation("Deleted stale nonce file {File}", file);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not delete stale nonce file {File}", file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Nonce directory sweep failed");
+        }
     }
 
     /// <summary>
@@ -871,14 +1040,21 @@ public sealed class MainForm : Form
         _logger.LogInformation("RDP login complete event");
         _lblConnection.Text = "连接: 已连接 — 分身桌面就绪";
         _btnGameMouse.Enabled = true;
+        _connecting = false;
         _isConnected = true;
         UpdateTrayIcon(true);
 
         BeginInvoke(() => _rdpHost?.TryFocusRdpInputWindow());
 
+        // Agent launch resolves the clone-account SID (potentially a network lookup)
+        // and performs several Task Scheduler COM calls — keep both off the UI thread.
         if (_settingsService.Current.ConnectionMode != ConnectionMode.ChildSession)
         {
-            LaunchAgentInChildSession();
+            _ = Task.Run(() =>
+            {
+                try { LaunchAgentInChildSession(); }
+                catch (Exception ex) { _logger.LogError(ex, "Agent launch failed"); }
+            });
         }
 
         var launchPath = _settingsService.Current.LaunchProgramPath;
@@ -913,13 +1089,15 @@ public sealed class MainForm : Form
     {
         if (_closing) return;
         _logger.LogWarning("RDP connection failed: {Reason}", reason);
-        _lblConnection.Text = "连接: 连接失败";
-        _btnConnect.Enabled = true;
-        _btnDisconnect.Enabled = false;
-        _btnGameMouse.Enabled = false;
-        _btnLaunch.Enabled = false;
-        _isConnected = false;
-        UpdateTrayIcon(false);
+        ResetConnectUi("连接: 连接失败");
+
+        // The ActiveX connect helper fires ConnectionFailed once per retry attempt
+        // (typically 3, a few seconds apart). Collapse them into one dialog so the
+        // user doesn't dismiss a stack of identical message boxes.
+        var now = Environment.TickCount64;
+        if (reason == _lastFailureReason && now - _lastFailureDialogAt < 15000) return;
+        _lastFailureReason = reason;
+        _lastFailureDialogAt = now;
         MessageBox.Show(reason, "AkiSpace 连接", MessageBoxButtons.OK, MessageBoxIcon.Warning);
     }
 
@@ -964,6 +1142,7 @@ public sealed class MainForm : Form
 
             if (_rdpHost != null)
             {
+                RefreshRdpHandles();
                 var connected = _rdpHost.GetConnectedState();
                 _lblConnection.Text = connected ? "连接: 已连接" : "连接: 未连接";
                 _isConnected = connected;
@@ -972,7 +1151,10 @@ public sealed class MainForm : Form
 
             if (_settingsService.Current.ShowPerformance)
             {
-                var process = Process.GetCurrentProcess();
+                // GetCurrentProcess() allocates an OS handle per call; without dispose
+                // the 1 Hz poll leaks handles until GC finalizers run. `using` releases
+                // it deterministically each tick.
+                using var process = Process.GetCurrentProcess();
                 var elapsed = DateTime.Now - process.StartTime;
                 var cpuUsage = elapsed.TotalMilliseconds > 0
                     ? process.TotalProcessorTime.TotalMilliseconds / elapsed.TotalMilliseconds * 100
@@ -989,18 +1171,37 @@ public sealed class MainForm : Form
 
     // ---------------------------------------------------------------- Forwarder Callbacks
 
+    /// <summary>
+    /// Refreshes the forwarder-facing window handles. MUST run on the UI thread
+    /// (RefreshStatus calls it once per second): reading Control.Handle and discovering
+    /// the RDP input capture window are only safe here. The poller thread consumes the
+    /// published values with a Win32 liveness check, so a ≤1 s stale handle after a
+    /// teardown degrades to a missed frame, never a crash.
+    /// </summary>
+    private void RefreshRdpHandles()
+    {
+        if (_rdpHost is null || _rdpHost.IsDisposed)
+        {
+            _rdpHostHandle = IntPtr.Zero;
+            _rdpInputWindowHandle = IntPtr.Zero;
+            return;
+        }
+        _rdpHostHandle = _rdpHost.Handle;
+        _rdpInputWindowHandle = _rdpHost.GetInputCaptureWindowHandle();
+    }
+
     private User32.RECT GetRdpViewerBounds()
     {
-        if (_rdpHost == null || !_rdpHost.IsHandleCreated)
+        var hwnd = Volatile.Read(ref _rdpHostHandle);
+        if (hwnd == IntPtr.Zero || !User32.IsWindow(hwnd))
             return default;
-        User32.GetWindowRect(_rdpHost.Handle, out var rect);
+        User32.GetWindowRect(hwnd, out var rect);
         return rect;
     }
 
     private bool IsRdpInputFocused()
     {
-        if (_rdpHost == null || !_rdpHost.IsHandleCreated)
-            return false;
-        return _rdpHost.IsRdpInputWindowFocused();
+        var hwnd = Volatile.Read(ref _rdpInputWindowHandle);
+        return RdpActiveXHost.IsWindowFocused(hwnd);
     }
 }

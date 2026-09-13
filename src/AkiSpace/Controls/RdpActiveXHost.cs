@@ -552,6 +552,31 @@ public sealed class RdpActiveXHost : AxHost
     }
 
     /// <summary>
+    /// Returns a validated "Input Capture Window" handle for off-thread focus polling.
+    /// Cache hits are answered from any thread with a pure Win32 liveness check; cache
+    /// misses fall back to discovery ONLY on the UI thread (EnumChildWindows against
+    /// this control's handle is not safe elsewhere) and return Zero off-thread — the
+    /// 1 Hz UI-thread refresh in MainForm keeps the cache warm for the 200 Hz poller.
+    /// </summary>
+    public IntPtr GetInputCaptureWindowHandle()
+    {
+        lock (_ocxGate)
+        {
+            if (_inputWindow is IntPtr cached && cached != IntPtr.Zero && User32.IsWindow(cached))
+                return cached;
+        }
+        if (InvokeRequired) return IntPtr.Zero;
+        return FindInputCaptureWindow();
+    }
+
+    /// <summary>
+    /// Pure Win32 focus comparison against a handle obtained via
+    /// <see cref="GetInputCaptureWindowHandle"/> — safe from any thread.
+    /// </summary>
+    public static bool IsWindowFocused(IntPtr windowHandle) =>
+        windowHandle != IntPtr.Zero && User32.GetFocusedWindowHandle() == windowHandle;
+
+    /// <summary>
     /// Sends scan-code key strokes to the remote session via
     /// IMsRdpClientNonScriptable.SendKeys. strokes = (scanCode, extended, keyUp) triples.
     /// </summary>

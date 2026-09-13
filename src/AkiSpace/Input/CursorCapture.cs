@@ -15,6 +15,7 @@ public sealed class CursorCapture : IDisposable
     private User32.RECT? _previousClipRect;
     private User32.RECT _captureBounds;
     private bool _isCapturing;
+    private bool _failureWarned;
     private int _cursorHideCallCount;
     private int _disposed;
 
@@ -32,6 +33,12 @@ public sealed class CursorCapture : IDisposable
     /// Clips the cursor to the given screen-space bounds and hides the cursor.
     /// Returns false if already capturing or the bounds are degenerate.
     /// </summary>
+    /// <remarks>
+    /// The caller's 5 ms poll retries a failed capture continuously, so failure
+    /// logging is de-duplicated to once per failure streak (Warning on the first,
+    /// silent afterwards) — an unlucky ClipCursor must not grow the log 200 lines
+    /// per second. On failure no captured state is left behind.
+    /// </remarks>
     public bool Capture(User32.RECT bounds)
     {
         lock (_gate)
@@ -46,16 +53,21 @@ public sealed class CursorCapture : IDisposable
             var gotClip = User32.GetClipCursor(out var previous);
             if (!gotClip)
             {
-                _logger.LogWarning("GetClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+                WarnThrottled("GetClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
             }
             _previousClipRect = gotClip ? previous : (User32.RECT?)null;
             _captureBounds = bounds;
 
             if (!User32.ClipCursor(ref bounds))
             {
-                _logger.LogWarning("ClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
+                // Nothing was actually captured — discard the saved state so a later
+                // Release() can't restore a rect we never clipped to.
+                _previousClipRect = null;
+                _captureBounds = default;
+                WarnThrottled("ClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
                 return false;
             }
+            _failureWarned = false;
 
             // Hide the cursor: ShowCursor(false) returns the previous display count;
             // loop until count goes negative (hidden), bounded to avoid runaway.
@@ -71,6 +83,18 @@ public sealed class CursorCapture : IDisposable
             _logger.LogDebug("Cursor captured to {Bounds}", bounds);
             return true;
         }
+    }
+
+    /// <summary>First failure of a streak logs Warning; repeats stay silent.</summary>
+    private void WarnThrottled(string message, int error)
+    {
+        if (_failureWarned)
+        {
+            _logger.LogDebug(message, error);
+            return;
+        }
+        _failureWarned = true;
+        _logger.LogWarning(message, error);
     }
 
     /// <summary>
@@ -115,34 +139,6 @@ public sealed class CursorCapture : IDisposable
             _isCapturing = false;
             _previousClipRect = null;
             _logger.LogDebug("Cursor fully released");
-        }
-    }
-
-    /// <summary>
-    /// Re-engages capture after a temporary Alt release (same bounds as last time).
-    /// </summary>
-    public bool Recapture()
-    {
-        lock (_gate)
-        {
-            if (_disposed != 0) return false;
-            if (_isCapturing) return true;
-            if (_captureBounds.Width <= 0 || _captureBounds.Height <= 0) return false;
-
-            if (!User32.ClipCursor(ref _captureBounds))
-            {
-                _logger.LogWarning("Recapture ClipCursor failed, error {Error}", System.Runtime.InteropServices.Marshal.GetLastWin32Error());
-                return false;
-            }
-            _cursorHideCallCount = 0;
-            for (var i = 0; i < 64; i++)
-            {
-                var count = User32.ShowCursor(false);
-                _cursorHideCallCount++;
-                if (count < 0) break;
-            }
-            _isCapturing = true;
-            return true;
         }
     }
 

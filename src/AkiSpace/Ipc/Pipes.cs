@@ -108,23 +108,33 @@ public sealed class PipeServer : IAsyncDisposable
                         await stream.WaitForConnectionAsync(token).ConfigureAwait(false);
                         _logger.LogInformation("Pipe client connected, verifying handshake");
 
-                        // Verify nonce handshake before accepting the connection.
+                        // Verify nonce handshake before accepting the connection. This
+                        // also sends the client a HandshakeAck verdict frame.
                         var verified = await VerifyHandshakeAsync(stream, token).ConfigureAwait(false);
                         if (!verified)
                         {
-                            _logger.LogWarning("Pipe handshake failed; disconnecting client");
                             stream.Dispose();
                             stream = null;
                             continue;
                         }
 
-                        _logger.LogInformation("Pipe handshake verified — agent connected");
                         IsClientConnected = true;
                         var connection = new PipeConnection(stream, _logger);
                         stream = null;
-                        connection.Disconnected += () => IsClientConnected = false;
-                        ClientConnected?.Invoke(connection);
-                        await connection.RunAsync(token).ConfigureAwait(false);
+                        try
+                        {
+                            connection.Disconnected += () => IsClientConnected = false;
+                            ClientConnected?.Invoke(connection);
+                            await connection.RunAsync(token).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            // RunAsync returned (client EOF/error) or the connect handler
+                            // threw — either way this accepted pipe instance must be
+                            // released before the loop creates the next one.
+                            IsClientConnected = false;
+                            await connection.DisposeAsync().ConfigureAwait(false);
+                        }
                     }
                     catch (OperationCanceledException)
                     {
@@ -204,52 +214,127 @@ public sealed class PipeServer : IAsyncDisposable
         }
     }
 
+    /// <summary>How long the server waits for a client's first handshake frame. Test seam.</summary>
+    public TimeSpan HandshakeTimeout { get; set; } = TimeSpan.FromSeconds(5);
+
     private async Task<bool> VerifyHandshakeAsync(Stream stream, CancellationToken ct)
     {
         if (_expectedNonce is not { Length: 32 })
         {
             _logger.LogWarning("No nonce configured; rejecting connection (fail-closed)");
+            await SendHandshakeAckAsync(stream, accepted: false, ct).ConfigureAwait(false);
             return false;
         }
 
+        var verified = false;
         try
         {
-            // Read the first frame — it must be a Handshake frame with the matching nonce.
-            var frame = await IpcProtocol.ReadFrameAsync(stream, ct).ConfigureAwait(false);
-            if (frame is null) return false;
-            var (type, payload) = frame.Value;
-            if (type != IpcPayloadType.Handshake) return false;
-            var receivedNonce = IpcProtocol.DeserializeNonce(payload);
-            if (!CryptographicOperations.FixedTimeEquals(receivedNonce, _expectedNonce))
+            // Bound the handshake read independently of the app lifetime token: a
+            // client that connects and never speaks must not wedge the single pipe
+            // instance (and with it the whole mouse-forwarding feature) forever.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(HandshakeTimeout);
+
+            var frame = await IpcProtocol.ReadFrameAsync(stream, timeout.Token).ConfigureAwait(false);
+            if (frame is null)
             {
-                _logger.LogWarning("Pipe nonce mismatch — rejecting connection");
-                return false;
+                _logger.LogDebug("Pipe client disconnected before completing handshake");
             }
-            return true;
+            else
+            {
+                var (type, payload) = frame.Value;
+                if (type != IpcPayloadType.Handshake)
+                {
+                    _logger.LogWarning("Pipe client sent {Type} instead of a handshake; rejecting", type);
+                }
+                else
+                {
+                    var receivedNonce = IpcProtocol.DeserializeNonce(payload);
+                    if (CryptographicOperations.FixedTimeEquals(receivedNonce, _expectedNonce))
+                    {
+                        verified = true;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Pipe nonce mismatch — rejecting connection");
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            _logger.LogWarning("Pipe handshake timed out after {Timeout}; disconnecting silent client", HandshakeTimeout);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Handshake verification failed");
-            return false;
+        }
+
+        // Send the verdict so the client can tell an explicit rejection (its nonce is
+        // wrong — retrying cannot succeed) from a network drop (retry may succeed).
+        await SendHandshakeAckAsync(stream, verified, ct).ConfigureAwait(false);
+        if (verified)
+        {
+            _logger.LogInformation("Pipe handshake verified — agent connected");
+        }
+        else
+        {
+            _logger.LogWarning("Pipe handshake failed; disconnecting client");
+        }
+        return verified;
+    }
+
+    /// <summary>Best-effort verdict write; the peer may already be gone.</summary>
+    private async Task SendHandshakeAckAsync(Stream stream, bool accepted, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(1));
+            await IpcProtocol.WriteFrameAsync(
+                stream, IpcPayloadType.HandshakeAck,
+                accepted ? IpcProtocol.HandshakeAccepted : IpcProtocol.HandshakeRejected,
+                timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Server shutting down — nothing to deliver.
+        }
+        catch (Exception)
+        {
+            // The rejection path must never throw back into the listen loop; if the
+            // client vanished mid-ack the disconnect itself carries the verdict.
         }
     }
 
     /// <summary>Stops the listener so a fresh Start() can be called again. Safe to call multiple times.</summary>
     public async Task StopAsync()
     {
+        CancellationTokenSource? cts;
         Task? waitFor;
         lock (_lifecycleGate)
         {
             if (_cts == null) return;
-            _cts.Cancel();
-            waitFor = _listenTask;
+            cts = _cts;
             _cts = null;
+            waitFor = _listenTask;
             _listenTask = null;
         }
+        cts.Cancel();
         if (waitFor != null)
         {
-            try { await waitFor.ConfigureAwait(false); } catch { /* ignore */ }
+            try
+            {
+                await waitFor.ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Pipe listen task ended with an exception during stop");
+            }
         }
+        // Disposing only after the listen task fully exited: its async flow still
+        // holds token registrations (WaitForConnectionAsync) until then.
+        cts.Dispose();
         _logger.LogInformation("Pipe server stopped");
     }
 
@@ -294,8 +379,10 @@ public sealed class PipeClient : IAsyncDisposable
             var bytes = File.ReadAllBytes(path);
             return bytes.Length == 32 ? bytes : null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception)
         {
+            // Any read failure (missing, locked, unreadable) means "no nonce" — the
+            // agent must degrade to a clean exit, never crash on startup.
             return null;
         }
         finally
@@ -322,30 +409,43 @@ public sealed class PipeClient : IAsyncDisposable
             if (IsConnected) return;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
 
+            if (_nonce is not { Length: 32 })
+            {
+                // Fail-closed: the server rejects nonce-less clients by design, so
+                // connecting anyway would just burn pipe instances and hide the
+                // real configuration problem behind retry noise.
+                _logger.LogError("No handshake nonce set; refusing to connect (the fail-closed server would reject us)");
+                return;
+            }
+
             while (!linked.IsCancellationRequested)
             {
+                NamedPipeClientStream? stream = null;
                 try
                 {
-                    var stream = new NamedPipeClientStream(
+                    stream = new NamedPipeClientStream(
                         ".", PipeNames.MouseForward,
                         PipeDirection.InOut, PipeOptions.Asynchronous);
                     await stream.ConnectAsync(TimeSpan.FromSeconds(2), linked.Token).ConfigureAwait(false);
                     _logger.LogInformation("Connected to primary pipe, sending handshake");
 
-                    // Send handshake nonce before anything else. The server is fail-closed:
-                    // a missing nonce means it will reject us, so log loudly rather than
-                    // connecting silently and being dropped.
-                    if (_nonce is { Length: 32 })
+                    await IpcProtocol.WriteFrameAsync(stream, IpcPayloadType.Handshake, _nonce, linked.Token).ConfigureAwait(false);
+                    _logger.LogInformation("Handshake nonce sent, awaiting server verdict");
+
+                    var ack = await ReadHandshakeAckAsync(stream, linked.Token).ConfigureAwait(false);
+                    if (ack == false)
                     {
-                        await IpcProtocol.WriteFrameAsync(stream, IpcPayloadType.Handshake, _nonce, linked.Token).ConfigureAwait(false);
-                        _logger.LogInformation("Handshake nonce sent");
+                        // Explicit rejection: retrying with the same nonce cannot
+                        // succeed and would only hammer the server.
+                        _logger.LogError("Pipe handshake rejected by primary (nonce mismatch); not retrying");
+                        return;
                     }
-                    else
-                    {
-                        _logger.LogError("No handshake nonce set; the fail-closed server will reject this connection");
-                    }
+                    // ack == null means no verdict arrived (timeout/EOF) — the server
+                    // may have dropped us for an unrelated reason; retry.
+                    _logger.LogInformation("Handshake accepted by primary");
 
                     _connection = new PipeConnection(stream, _logger);
+                    stream = null; // ownership transferred to the connection
                     _connection.BatchReceived += b => BatchReceived?.Invoke(b);
                     _connection.ResultReceived += r => ResultReceived?.Invoke(r);
                     _ = _connection.RunAsync(_cts.Token);
@@ -360,11 +460,39 @@ public sealed class PipeClient : IAsyncDisposable
                     _logger.LogDebug("Pipe connect retry: {Message}", ex.Message);
                     try { await Task.Delay(1000, linked.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
                 }
+                finally
+                {
+                    // Release every failed attempt's pipe handle; skipped after a
+                    // successful hand-off because stream is null by then.
+                    stream?.Dispose();
+                }
             }
         }
         finally
         {
             _connectGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads the server's handshake verdict. True = accepted, false = explicitly
+    /// rejected, null = no verdict (timeout / dropped connection).
+    /// </summary>
+    private static async Task<bool?> ReadHandshakeAckAsync(Stream stream, CancellationToken ct)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            var frame = await IpcProtocol.ReadFrameAsync(stream, timeout.Token).ConfigureAwait(false);
+            if (frame is null) return null;
+            var (type, payload) = frame.Value;
+            if (type != IpcPayloadType.HandshakeAck || payload.Length < 1) return null;
+            return payload[0] != 0;
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return null; // verdict never arrived within the ack window
         }
     }
 
@@ -390,7 +518,10 @@ public sealed class PipeClient : IAsyncDisposable
     {
         _cts.Cancel();
         if (_connection != null) await _connection.DisposeAsync().ConfigureAwait(false);
-        _connectGate.Dispose();
+        // Deliberately NOT disposing _connectGate: a concurrent ConnectAsync may be
+        // waiting on it, and SemaphoreSlim.Dispose races such waiters into
+        // ObjectDisposedException. An undisposed semaphore holds no unmanaged
+        // resources and is reclaimed by the GC once waiters are done.
         // RunAsync may still hold the token briefly after Cancel(); disposing the CTS
         // while a consumer observes the token can race. Dispose defensively.
         try { _cts.Dispose(); } catch (ObjectDisposedException) { /* already disposed */ }
@@ -480,6 +611,9 @@ public sealed class PipeConnection : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         try { await _stream.DisposeAsync().ConfigureAwait(false); } catch { /* ignore */ }
-        _writeGate.Dispose();
+        // Deliberately NOT disposing _writeGate: a concurrent SendAsync may be inside
+        // WaitAsync, and SemaphoreSlim.Dispose races such waiters into
+        // ObjectDisposedException. An undisposed semaphore holds no unmanaged
+        // resources and is reclaimed by the GC once waiters are done.
     }
 }

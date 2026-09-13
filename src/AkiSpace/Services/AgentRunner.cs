@@ -26,11 +26,17 @@ public sealed class AgentRunner
 
     private readonly ILogger<AgentRunner> _logger;
     private readonly PipeClient _pipeClient;
+
+    // Bounded with DropOldest: replay paces itself to wall-clock time, so sustained
+    // motion can enqueue faster than it drains. An unbounded channel would grow
+    // memory without limit and stretch input latency toward minutes; dropping the
+    // OLDEST backlog keeps the clone cursor near-real-time instead.
     private readonly Channel<RelativeMouseBatch> _batches =
-        Channel.CreateUnbounded<RelativeMouseBatch>(new UnboundedChannelOptions
+        Channel.CreateBounded<RelativeMouseBatch>(new BoundedChannelOptions(1024)
         {
             SingleReader = true,
             SingleWriter = false,
+            FullMode = BoundedChannelFullMode.DropOldest,
         });
 
     public AgentRunner(ILogger<AgentRunner> logger, PipeClient pipeClient)
@@ -74,12 +80,23 @@ public sealed class AgentRunner
     }
 
     /// <summary>
-    /// Event handler: enqueues the batch (non-blocking). The serialized consumer
-    /// does the actual replay + result send, guaranteeing FIFO result ordering.
+    /// Event handler: enqueues the batch (non-blocking, dropping the oldest backlog
+    /// when saturated). The serialized consumer does the actual replay + result send,
+    /// guaranteeing FIFO result ordering.
     /// </summary>
     private void OnBatchReceived(RelativeMouseBatch batch)
     {
-        _batches.Writer.TryWrite(batch);
+        // TryWrite returns false only when a batch was dropped to admit this one
+        // (DropOldest always makes room) — log, don't spam: the drop IS the policy.
+        if (_batches.Writer.TryWrite(batch))
+        {
+            _logger.LogDebug("Queued batch {FirstSequence} ({Count} samples); queue depth {Depth}",
+                batch.FirstSequence, batch.Samples.Length, _batches.Reader.Count);
+        }
+        else
+        {
+            _logger.LogDebug("Batch queue saturated handling {FirstSequence}; oldest backlog dropped", batch.FirstSequence);
+        }
     }
 
     /// <summary>
@@ -93,8 +110,14 @@ public sealed class AgentRunner
             var handled = await ReplayBatchAsync(batch, ct).ConfigureAwait(false);
             try
             {
+                // The wire field is LastSequence: cover every sample in the batch,
+                // not just the first one. (Empty batches keep FirstSequence — a
+                // length-1-minus-one wrap would report the previous batch's range.)
+                var lastSequence = batch.Samples.Length > 0
+                    ? batch.FirstSequence + (ulong)(batch.Samples.Length - 1)
+                    : batch.FirstSequence;
                 await _pipeClient.SendResultAsync(
-                    new RelativeMouseResult(batch.FirstSequence, handled), ct).ConfigureAwait(false);
+                    new RelativeMouseResult(lastSequence, handled), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -155,7 +178,7 @@ public sealed class AgentRunner
     /// Waits until the absolute schedule time for this sub-group, then emits a
     /// single SendInput(INPUT[]) for all its buffered moves.
     /// </summary>
-    private static async Task FlushGroupAsync(
+    private async Task FlushGroupAsync(
         List<User32.INPUT> group, long replayStart, long relTicks, CancellationToken ct)
     {
         var targetMs = relTicks * 1000.0 / Stopwatch.Frequency;
@@ -166,8 +189,17 @@ public sealed class AgentRunner
             await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct).ConfigureAwait(false);
         }
 
-        User32.SendInput(
+        var sent = User32.SendInput(
             (uint)group.Count, group.ToArray(), Marshal.SizeOf<User32.INPUT>());
+        // SendInput returns the number of events actually injected. 0 means every
+        // event was blocked (UIPI / an elevated window / input desktop mismatch) —
+        // reporting Handled:true in that case would silently fake mouse input.
+        if (sent != group.Count)
+        {
+            _logger.LogWarning(
+                "SendInput injected {Sent}/{Total} mouse events (blocked events are typically UIPI/integrity related)",
+                sent, group.Count);
+        }
     }
 
     private static User32.INPUT CreateMouseMove(int deltaX, int deltaY) => new()

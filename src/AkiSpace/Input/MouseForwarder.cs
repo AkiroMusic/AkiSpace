@@ -21,7 +21,6 @@ public sealed class MouseForwarder : IDisposable
     private readonly IRawInputMonitor _rawInputMonitor;
     private readonly CursorCapture _cursorCapture;
     private readonly PipeServer _pipeServer;
-    private readonly PipeClient _pipeClient;
     private Func<User32.RECT>? _getCaptureBounds;
     private Func<bool>? _isRdpFocused;
 
@@ -35,8 +34,6 @@ public sealed class MouseForwarder : IDisposable
     private int _altPressedMask;
     private bool _gameMouseModeEnabled;
     private bool _forwardingActive;
-    private bool _captureEnabled;
-    private bool _handlingConfirmed;
     private bool _noAgentWarned;
     private PipeConnection? _primaryConnection;
     private System.Threading.Timer? _pollTimer;
@@ -46,22 +43,22 @@ public sealed class MouseForwarder : IDisposable
     /// Creates the forwarder. Call <see cref="Initialize"/> before enabling
     /// game-mouse mode.
     /// </summary>
+    /// <remarks>
+    /// Replay lives in <see cref="Services.AgentRunner"/> (child session). This class is
+    /// the primary-session capture/forward engine; it does not consume pipe batches.
+    /// </remarks>
     public MouseForwarder(
         ILogger<MouseForwarder> logger,
         IRawInputMonitor rawInputMonitor,
         CursorCapture cursorCapture,
-        PipeServer pipeServer,
-        PipeClient pipeClient)
+        PipeServer pipeServer)
     {
         _logger = logger;
         _rawInputMonitor = rawInputMonitor;
         _cursorCapture = cursorCapture;
         _pipeServer = pipeServer;
-        _pipeClient = pipeClient;
 
         _pipeServer.ClientConnected += OnClientConnected;
-        _pipeClient.BatchReceived += OnBatchReceived;
-        _pipeClient.ResultReceived += OnResultReceived;
     }
 
     /// <summary>
@@ -126,8 +123,6 @@ public sealed class MouseForwarder : IDisposable
                 _pollTimer?.Dispose();
                 _pollTimer = null;
                 _forwardingActive = false;
-                _captureEnabled = false;
-                _handlingConfirmed = false;
                 _accumulatedX = _accumulatedY = 0;
                 _cursorCapture.Release();
 
@@ -146,8 +141,6 @@ public sealed class MouseForwarder : IDisposable
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             SetGameMouseModeEnabled(false);
             _pipeServer.ClientConnected -= OnClientConnected;
-            _pipeClient.BatchReceived -= OnBatchReceived;
-            _pipeClient.ResultReceived -= OnResultReceived;
             _cursorCapture.Dispose();
         }
     }
@@ -161,42 +154,8 @@ public sealed class MouseForwarder : IDisposable
         connection.Disconnected += () =>
         {
             lock (_gate) _primaryConnection = null;
-            _handlingConfirmed = false;
-            _captureEnabled = false;
             _cursorCapture.Release();
         };
-    }
-
-    /// <summary>Child side: received a batch — replay via SendInput.</summary>
-    private void OnBatchReceived(RelativeMouseBatch batch)
-    {
-        try
-        {
-            foreach (var sample in batch.Samples)
-            {
-                if (sample.DeltaX != 0 || sample.DeltaY != 0)
-                {
-                    SendRelativeMouseMove(sample.DeltaX, sample.DeltaY);
-                }
-            }
-            // Confirm handled (in the real child instance this is gated on the
-            // target app being active; here we always confirm since we replay blindly).
-            _ = _pipeClient.SendResultAsync(new RelativeMouseResult(batch.FirstSequence, Handled: true));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to replay mouse batch");
-            _ = _pipeClient.SendResultAsync(new RelativeMouseResult(batch.FirstSequence, Handled: false));
-        }
-    }
-
-    /// <summary>Primary side: child confirmed it handled a batch.</summary>
-    private void OnResultReceived(RelativeMouseResult result)
-    {
-        lock (_gate)
-        {
-            _handlingConfirmed = result.Handled;
-        }
     }
 
     // ---------------------------------------------------------------- raw input path
@@ -285,17 +244,20 @@ public sealed class MouseForwarder : IDisposable
     {
         try
         {
-            bool forwardingActive;
+            // All probing (key state, UI callbacks) happens OUTSIDE the lock: the raw
+            // input thread takes the same lock per mouse event, and holding it across
+            // GetAsyncKeyState / focus checks would stall input dispatch for the whole
+            // probe. The locked section only applies the resulting state transition.
+            var altPressed = (User32.GetAsyncKeyState(InputConstants.VK_LMENU) & InputConstants.KEY_PRESSED) != 0 ||
+                             (User32.GetAsyncKeyState(InputConstants.VK_RMENU) & InputConstants.KEY_PRESSED) != 0;
+            bool rdpFocused = _isRdpFocused?.Invoke() == true;
+            bool shouldForward = rdpFocused && !altPressed;
+
             lock (_gate)
             {
                 if (!_gameMouseModeEnabled) return;
 
-                var altPressed = (User32.GetAsyncKeyState(InputConstants.VK_LMENU) & InputConstants.KEY_PRESSED) != 0 ||
-                                 (User32.GetAsyncKeyState(InputConstants.VK_RMENU) & InputConstants.KEY_PRESSED) != 0;
                 _altPressedMask = altPressed ? 1 : 0;
-
-                bool rdpFocused = _isRdpFocused?.Invoke() == true;
-                bool shouldForward = rdpFocused && !altPressed;
 
                 if (shouldForward && !_forwardingActive)
                 {
@@ -306,51 +268,24 @@ public sealed class MouseForwarder : IDisposable
                 else if (!shouldForward && _forwardingActive)
                 {
                     _forwardingActive = false;
-                    _captureEnabled = false;
                     if (altPressed)
                         _cursorCapture.ReleaseTemporarily();
                     else
                         _cursorCapture.Release();
                 }
 
-                // Snapshot for use outside the lock.
-                forwardingActive = _forwardingActive;
+                if (!_forwardingActive) return;
             }
-
-            if (!forwardingActive) return;
 
             var bounds = _getCaptureBounds?.Invoke() ?? default;
             if (bounds.Width > 0 && !_cursorCapture.IsCapturing)
             {
-                _captureEnabled = _cursorCapture.Capture(bounds);
+                _cursorCapture.Capture(bounds);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "PollCaptureState error");
         }
-    }
-
-    // ---------------------------------------------------------------- child replay
-
-    private static void SendRelativeMouseMove(int deltaX, int deltaY)
-    {
-        var input = new User32.INPUT
-        {
-            type = InputConstants.INPUT_MOUSE,
-            U = new User32.InputUnion
-            {
-                mi = new User32.MOUSEINPUT
-                {
-                    dx = deltaX,
-                    dy = deltaY,
-                    mouseData = 0,
-                    dwFlags = InputConstants.MOUSEEVENTF_MOVE,
-                    time = 0,
-                    dwExtraInfo = IntPtr.Zero,
-                },
-            },
-        };
-        User32.SendInput(1, new[] { input }, System.Runtime.InteropServices.Marshal.SizeOf<User32.INPUT>());
     }
 }

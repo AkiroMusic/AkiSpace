@@ -50,13 +50,15 @@ static class Program
         Application.ThreadException += (_, e) =>
             logger.LogError(e.Exception, "UI thread exception");
 
-        // Initialize theme manager with settings
-        var settingsService = provider.GetRequiredService<SettingsService>();
-        var themeManager = ThemeManager.Current;
-        themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
-
         try
         {
+            // Theme initialization touches WinForms/DWM and user settings; a throw here
+            // must hit the same fatal-error path as everything else instead of killing
+            // the process silently before the try block was entered.
+            var settingsService = provider.GetRequiredService<SettingsService>();
+            var themeManager = ThemeManager.Current;
+            themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
+
             var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
             logger.LogInformation("AkiSpace starting (build {Version})", version);
             Application.Run(provider.GetRequiredService<MainForm>());
@@ -183,7 +185,19 @@ static class Program
         }
 
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddDebug().SetMinimumLevel(LogLevel.Debug));
+        services.AddLogging(b =>
+        {
+            b.AddDebug().SetMinimumLevel(LogLevel.Debug);
+            // File logging for the agent: the cross-session replay process is the
+            // hardest component to debug post-mortem (no debugger attached, separate
+            // session), so it gets the same daily file family as the GUI.
+            var logDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AkiSpace", "logs");
+            Directory.CreateDirectory(logDir);
+            b.AddProvider(new FileLoggerProvider(
+                Path.Combine(logDir, $"akspace-agent-{DateTime.Now:yyyyMMdd}.log")));
+        });
         services.AddSingleton<Ipc.PipeClient>();
         services.AddSingleton<AgentRunner>();
         using var provider = services.BuildServiceProvider();
@@ -256,9 +270,9 @@ static class Program
         services.AddSingleton<Input.IRawInputMonitor, Input.RawInputMonitor>();
         services.AddSingleton<Input.CursorCapture>();
         services.AddSingleton<Ipc.PipeServer>();
-        services.AddSingleton<Ipc.PipeClient>();
         services.AddSingleton<Input.MouseForwarder>();
-        services.AddSingleton<AgentRunner>();
+        // (PipeClient/AgentRunner are agent-mode-only; the GUI process only ever runs
+        // the server side of the pipe, so they are NOT registered here.)
 
         // UI
         services.AddTransient<MainForm>();

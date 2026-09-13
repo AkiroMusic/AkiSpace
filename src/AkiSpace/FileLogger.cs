@@ -151,7 +151,18 @@ internal sealed class FileLogger : ILogger
     {
         if (!IsEnabled(logLevel)) return;
 
-        var message = formatter(state, exception);
+        // A throwing formatter (bad message templates, hostile state ToString) must
+        // not propagate into the application's logging call site.
+        string message;
+        try
+        {
+            message = formatter(state, exception);
+        }
+        catch (Exception ex)
+        {
+            message = $"<formatter threw: {ex.GetType().Name}> {state}";
+        }
+
         var sb = new StringBuilder();
         sb.Append(DateTime.Now.ToString("HH:mm:ss.fff"));
         sb.Append(" [").Append(logLevel.ToString().ToUpperInvariant()).Append("] ");

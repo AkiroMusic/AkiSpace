@@ -71,7 +71,9 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
 
     public void Stop()
     {
-        lock (_gate) StopCoreLocked();
+        Thread? dying;
+        lock (_gate) dying = StopCoreLocked();
+        JoinStopped(dying);
     }
 
     private void StartCoreLocked()
@@ -88,9 +90,16 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         _logger.LogInformation("Raw input monitor thread started");
     }
 
-    private void StopCoreLocked()
+    /// <summary>
+    /// Posts WM_QUIT to the running monitor thread and clears the thread field.
+    /// Returns the dying thread so callers can Join it OUTSIDE the lock — the
+    /// raw-input handler takes <see cref="_gate"/> to snapshot subscriptions, so
+    /// joining under the lock could deadlock against a dispatch in progress.
+    /// </summary>
+    private Thread? StopCoreLocked()
     {
-        if (_thread == null || !_thread.IsAlive) return;
+        if (_thread == null || !_thread.IsAlive) return null;
+        var dying = _thread;
         // Snapshot _hwnd under _hwndLock so a concurrent ThreadMain that is
         // mid-create doesn't have its handle zeroed out from under us before
         // we Post WM_QUIT. Capture the value to use after releasing the lock.
@@ -108,28 +117,57 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         }
         _thread = null;
         _logger.LogInformation("Raw input monitor stopped");
+        return dying;
+    }
+
+    private void JoinStopped(Thread? thread)
+    {
+        if (thread == null) return;
+        if (!thread.Join(TimeSpan.FromSeconds(2)))
+        {
+            _logger.LogWarning("Raw input monitor thread did not exit within 2s of WM_QUIT");
+        }
     }
 
     private void ThreadMain()
     {
-        var hwndSource = new HiddenWindowHost();
+        // An unhandled exception on this manual thread would terminate the whole
+        // process (e.g. RegisterClass/CreateWindowEx failures throw from the
+        // HiddenWindowHost constructor), so the entry point is a total backstop.
+        try
+        {
+            ThreadMainCore();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Raw input monitor thread crashed");
+        }
+    }
+
+    private void ThreadMainCore()
+    {
+        var hwndSource = new HiddenWindowHost(_logger);
         hwndSource.RawInputReceived += OnRawInputReceived;
-        // Publish the new handle atomically with a memory barrier.
-        lock (_hwndLock) { _hwnd = hwndSource.Handle; }
+        // Publish the new handle. On exit we only clear the field if it still
+        // holds OUR handle — otherwise a quick Stop+Start race would let this
+        // dying thread zero out the handle published by the replacement thread,
+        // leaving the new monitor unstoppable (no WM_QUIT could be posted).
+        var myHwnd = hwndSource.Handle;
+        lock (_hwndLock) { _hwnd = myHwnd; }
 
         var device = new User32.RAWINPUTDEVICE
         {
             usUsagePage = 0x01, // Generic Desktop
             usUsage = 0x02,     // Mouse
             dwFlags = InputConstants.RIDEV_INPUTSINK,
-            hwndTarget = hwndSource.Handle,
+            hwndTarget = myHwnd,
         };
         var registered = User32.RegisterRawInputDevices(
             new[] { device }, 1, (uint)Marshal.SizeOf<User32.RAWINPUTDEVICE>());
         if (!registered)
         {
             _logger.LogError("RegisterRawInputDevices failed, Win32 error {Error}", Marshal.GetLastWin32Error());
-            lock (_hwndLock) { _hwnd = IntPtr.Zero; }
+            ClearPublishedHandle(myHwnd);
             hwndSource.Dispose();
             return;
         }
@@ -141,17 +179,30 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         }
         finally
         {
-            // Unregister on exit
+            // Unregister on exit. RIDEV_REMOVE requires a NULL hwndTarget to remove
+            // all registrations for this usage page/usage (a non-NULL target makes
+            // the call fail with ERROR_INVALID_PARAMETER on some configurations).
             var remove = new User32.RAWINPUTDEVICE
             {
                 usUsagePage = 0x01,
                 usUsage = 0x02,
                 dwFlags = InputConstants.RIDEV_REMOVE,
-                hwndTarget = hwndSource.Handle,
+                hwndTarget = IntPtr.Zero,
             };
-            User32.RegisterRawInputDevices(new[] { remove }, 1, (uint)Marshal.SizeOf<User32.RAWINPUTDEVICE>());
-            lock (_hwndLock) { _hwnd = IntPtr.Zero; }
+            if (!User32.RegisterRawInputDevices(new[] { remove }, 1, (uint)Marshal.SizeOf<User32.RAWINPUTDEVICE>()))
+            {
+                _logger.LogDebug("Raw input unregister failed, Win32 error {Error}", Marshal.GetLastWin32Error());
+            }
+            ClearPublishedHandle(myHwnd);
             hwndSource.Dispose();
+        }
+    }
+
+    private void ClearPublishedHandle(IntPtr myHwnd)
+    {
+        lock (_hwndLock)
+        {
+            if (_hwnd == myHwnd) _hwnd = IntPtr.Zero;
         }
     }
 
@@ -206,24 +257,27 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
 
     private void Unsubscribe(Subscription sub)
     {
+        Thread? dying;
         lock (_gate)
         {
             _subscriptions.Remove(sub);
             _subscriberCount--;
-            if (_subscriberCount <= 0)
-                StopCoreLocked();
+            dying = _subscriberCount <= 0 ? StopCoreLocked() : null;
         }
+        JoinStopped(dying);
     }
 
     public void Dispose()
     {
+        Thread? dying;
         lock (_gate)
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _subscriptions.Clear();
             _subscriberCount = 0;
-            StopCoreLocked();
+            dying = StopCoreLocked();
         }
+        JoinStopped(dying);
     }
 
     private sealed class Subscription : IDisposable
@@ -249,14 +303,16 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     private sealed class HiddenWindowHost : IDisposable
     {
         private readonly string _className;
+        private readonly ILogger _logger;
         private IntPtr _hwnd;
         private IntPtr _module;
         private User32.WndProcDelegate _wndProcDelegate;
 
         public event Action<IntPtr>? RawInputReceived;
 
-        public HiddenWindowHost()
+        public HiddenWindowHost(ILogger logger)
         {
+            _logger = logger;
             _module = Marshal.GetHINSTANCE(typeof(HiddenWindowHost).Module);
             _className = "AkiSpaceRawInputWindow_" + Guid.NewGuid().ToString("N");
 
@@ -284,8 +340,18 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         public void RunMessageLoop()
         {
             User32.MSG msg;
-            while (User32.GetMessage(out msg, IntPtr.Zero, 0, 0))
+            while (true)
             {
+                // GetMessage returns -1 on error (NOT a triple-state BOOL): dispatching
+                // would then run on an uninitialized MSG, and looping on a bool cast
+                // would spin forever. 0 = WM_QUIT, -1 = error — both end the loop.
+                var result = User32.GetMessage(out msg, IntPtr.Zero, 0, 0);
+                if (result == 0) break;
+                if (result == -1)
+                {
+                    _logger.LogWarning("GetMessage failed, Win32 error {Error}; ending raw input loop", Marshal.GetLastWin32Error());
+                    break;
+                }
                 User32.TranslateMessage(ref msg);
                 User32.DispatchMessage(ref msg);
             }
