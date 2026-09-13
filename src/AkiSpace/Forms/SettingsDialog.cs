@@ -67,7 +67,7 @@ public sealed class SettingsDialog : Form
         var mainPanel = new Panel
         {
             Dock = DockStyle.Fill,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
             Padding = new Padding(ThemeTokens.Space.S6), // 24px
             AutoScroll = true,
         };
@@ -78,7 +78,7 @@ public sealed class SettingsDialog : Form
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
             Padding = new Padding(0),
         };
 
@@ -138,14 +138,14 @@ public sealed class SettingsDialog : Form
             Dock = DockStyle.Bottom,
             Height = 70,
             Padding = new Padding(ThemeTokens.Space.S6, ThemeTokens.Space.S4, ThemeTokens.Space.S6, ThemeTokens.Space.S4),
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
         var btnFlow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.BgBase,
         };
 
         _btnOk.Text = "保存";
@@ -176,7 +176,7 @@ public sealed class SettingsDialog : Form
             ColumnCount = 2,
             RowCount = 7,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
@@ -203,13 +203,14 @@ public sealed class SettingsDialog : Form
         AddRow(grid, 5, "", _chkSmartSizing);
         AddRow(grid, 6, "", _chkShortcutsRemote);
         // Add audio redirect in next row
-        var row7 = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Height = 36 };
+        var row7 = new Panel { Dock = DockStyle.Fill, BackColor = ThemeManager.Current.Surface1, Height = 36 };
         _chkAudioRedirect.Dock = DockStyle.Fill;
         row7.Controls.Add(_chkAudioRedirect);
-        grid.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill, BackColor = Color.Transparent }, 0, 7);
+        grid.Controls.Add(new Label { Text = "", Dock = DockStyle.Fill, BackColor = ThemeManager.Current.Surface1 }, 0, 7);
         grid.Controls.Add(row7, 1, 7);
 
         card.ContentControls.Add(grid);
+        card.Controls.SetChildIndex(grid, 0); // same dock-order fix
     }
 
     private void BuildBehaviorCard(DoubleBezelCard card)
@@ -220,7 +221,7 @@ public sealed class SettingsDialog : Form
             ColumnCount = 1,
             RowCount = 6,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
 
@@ -241,6 +242,7 @@ public sealed class SettingsDialog : Form
         }
 
         card.ContentControls.Add(grid);
+        card.Controls.SetChildIndex(grid, 0); // same dock-order fix
     }
 
     private void BuildAccountCard(DoubleBezelCard card)
@@ -251,7 +253,7 @@ public sealed class SettingsDialog : Form
             ColumnCount = 2,
             RowCount = 2,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
@@ -265,6 +267,7 @@ public sealed class SettingsDialog : Form
         AddRow(grid, 1, "分身账户密码", _txtClonePassword, "密码使用 DPAPI 加密存储；留空则首次连接标准 RDP 时询问");
 
         card.ContentControls.Add(grid);
+        card.Controls.SetChildIndex(grid, 0); // same dock-order fix
     }
 
     private void BuildLaunchCard(DoubleBezelCard card)
@@ -275,7 +278,7 @@ public sealed class SettingsDialog : Form
             ColumnCount = 2,
             RowCount = 1,
             AutoSize = true,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Padding = new Padding(0, ThemeTokens.Space.S2, 0, 0),
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -297,8 +300,8 @@ public sealed class SettingsDialog : Form
                 _txtLaunchProgramPath.Text = ofd.FileName;
         };
 
-        var rowPanel = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Height = 44 };
-        var rowFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = Color.Transparent };
+        var rowPanel = new Panel { Dock = DockStyle.Fill, BackColor = ThemeManager.Current.Surface1, Height = 44 };
+        var rowFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, BackColor = ThemeManager.Current.Surface1 };
         rowFlow.Controls.Add(_txtLaunchProgramPath);
         rowFlow.Controls.Add(_btnBrowseLaunchProgram);
         rowPanel.Controls.Add(rowFlow);
@@ -309,7 +312,7 @@ public sealed class SettingsDialog : Form
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = ThemeManager.Current.TextPrimary,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Font = ThemeManager.Current.GetFontSans(13f),
             Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
             AutoSize = true,
@@ -318,6 +321,7 @@ public sealed class SettingsDialog : Form
         grid.Controls.Add(rowPanel, 1, 0);
 
         card.ContentControls.Add(grid);
+        card.Controls.SetChildIndex(grid, 0); // same dock-order fix
     }
 
     private static void AddRow(TableLayoutPanel grid, int row, string label, Control control, string? hint = null)
@@ -328,7 +332,7 @@ public sealed class SettingsDialog : Form
             Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft,
             ForeColor = ThemeManager.Current.TextPrimary,
-            BackColor = Color.Transparent,
+            BackColor = ThemeManager.Current.Surface1,
             Font = ThemeManager.Current.GetFontSans(13f),
             Margin = new Padding(0, 0, ThemeTokens.Space.S4, 0),
             AutoSize = true,
@@ -345,7 +349,7 @@ public sealed class SettingsDialog : Form
                 Text = hint,
                 Dock = DockStyle.Fill,
                 ForeColor = ThemeManager.Current.TextTertiary,
-                BackColor = Color.Transparent,
+                BackColor = ThemeManager.Current.Surface1,
                 Font = ThemeManager.Current.GetFontSans(11f),
                 AutoSize = true,
                 Margin = new Padding(0, -4, 0, 8),

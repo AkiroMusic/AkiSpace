@@ -126,6 +126,9 @@ public sealed class StyledListView : ListView
             : (e.ColumnIndex == 0 ? ThemeManager.Current.TextPrimary : ThemeManager.Current.TextSecondary);
 
         var sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
+        // Long details must not wrap: wrapped lines vertically overflow the ~20px
+        // row and bleed across neighbouring rows as unreadable "ghost" text.
+        sf.FormatFlags |= StringFormatFlags.NoWrap;
         using var textBrush = new SolidBrush(textColor);
         var textRect = new RectangleF(rect.X + 16, rect.Y, Math.Max(0, rect.Width - 32), rect.Height);
         g.DrawString(subItem.Text, Font, textBrush, textRect, sf);

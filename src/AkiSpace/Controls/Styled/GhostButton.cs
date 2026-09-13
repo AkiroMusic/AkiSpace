@@ -17,10 +17,14 @@ public sealed class GhostButton : Button
 
     public GhostButton()
     {
-        SetStyle(ControlStyles.SupportsTransparentBackColor | ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        // OPAQUE backdrop only — see DrawHelpers.ResolveBackdrop. The previous
+        // Transparent backcolor + UserPaint + OptimizedDoubleBuffer combination
+        // disabled real double buffering and composited stale buffer garbage
+        // (flickering, unreadable dialogs).
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
         FlatStyle = FlatStyle.Flat;
         FlatAppearance.BorderSize = 0;
-        BackColor = Color.Transparent;
+        BackColor = ThemeManager.Current.Surface1;
         ForeColor = Color.Transparent;
         Font = ThemeManager.Current.GetFontSans(12f, FontStyle.Regular);
         Size = new Size(100, 36);
@@ -31,6 +35,12 @@ public sealed class GhostButton : Button
 
         MouseEnter += (_, _) => { _hovered = true; _timer.Start(); };
         MouseLeave += (_, _) => { _hovered = false; _timer.Start(); };
+    }
+
+    protected override void OnParentChanged(EventArgs e)
+    {
+        base.OnParentChanged(e);
+        if (Parent is not null) BackColor = DrawHelpers.ResolveBackdrop(this);
     }
 
     private void Animate()
