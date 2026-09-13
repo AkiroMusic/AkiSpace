@@ -31,7 +31,7 @@ public static class PipeNames
 /// client connection and exposes typed frame events. Verifies a nonce
 /// handshake so only the agent launched with the correct nonce can connect.
 /// </summary>
-public sealed class PipeServer : IAsyncDisposable
+public sealed class PipeServer : IAsyncDisposable, IDisposable
 {
     private readonly ILogger<PipeServer> _logger;
     private readonly object _lifecycleGate = new();
@@ -341,6 +341,16 @@ public sealed class PipeServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The DI container disposes services synchronously on shutdown; an
+    /// IAsyncDisposable-only singleton makes ServiceProvider.Dispose throw
+    /// ("type only implements IAsyncDisposable") and crash the process at exit.
+    /// </summary>
+    void IDisposable.Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
 

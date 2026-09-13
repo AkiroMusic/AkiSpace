@@ -16,12 +16,18 @@ public sealed class StyledListView : ListView
 
     public StyledListView()
     {
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.SupportsTransparentBackColor, true);
+        // Deliberately NOT UserPaint/AllPaintingInWmPaint: those styles suppress the
+        // native ListView paint path, so NM_CUSTOMDRAW never fires and OwnerDraw's
+        // OnDrawItem/OnDrawColumnHeader render NOTHING (an empty control). OwnerDraw
+        // alone is the supported custom-paint path; DoubleBuffered kills the flicker.
+        DoubleBuffered = true;
         View = View.Details;
         FullRowSelect = true;
         GridLines = false;
         BorderStyle = BorderStyle.None;
-        BackColor = Color.Transparent;
+        // Solid color: the native control has no transparent-backcolor compositing,
+        // and this must match the row background painted in OnDrawItem.
+        BackColor = ThemeManager.Current.Surface1;
         ForeColor = ThemeManager.Current.TextPrimary;
         Font = ThemeManager.Current.GetFontSans(13f, FontStyle.Regular);
         HeaderStyle = ColumnHeaderStyle.Nonclickable;
@@ -68,15 +74,24 @@ public sealed class StyledListView : ListView
 
     protected override void OnDrawItem(DrawListViewItemEventArgs e)
     {
+        // Cells are painted per-column in OnDrawSubItem. Drawing the whole row here
+        // TOO double-draws everything (the row-overlap garbling) — stay a no-op.
+        e.DrawDefault = false;
+    }
+
+    protected override void OnDrawSubItem(DrawListViewSubItemEventArgs e)
+    {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
         var rect = e.Bounds;
-        var isSelected = e.Item.Selected;
-        var isHovered = e.ItemIndex == _hoveredIndex && !isSelected;
+        var item = e.Item;
+        if (item is null) return;
+        var isSelected = item.Selected;
+        var isHovered = item.Index == _hoveredIndex && !isSelected;
 
-        // Row background
+        // Cell background
         Color rowBg;
         if (isSelected)
             rowBg = Color.FromArgb(10, ThemeManager.Current.Accent.R, ThemeManager.Current.Accent.G, ThemeManager.Current.Accent.B); // 4%
@@ -85,47 +100,36 @@ public sealed class StyledListView : ListView
         else
             rowBg = ThemeManager.Current.Surface1;
 
-        using var bgBrush = new SolidBrush(rowBg);
-        g.FillRectangle(bgBrush, rect);
+        using (var bgBrush = new SolidBrush(rowBg))
+        {
+            g.FillRectangle(bgBrush, rect);
+        }
 
         // Row separator
-        using var sepPen = new Pen(ThemeManager.Current.Border, 1);
-        g.DrawLine(sepPen, rect.Left, rect.Bottom - 1, rect.Right, rect.Bottom - 1);
+        using (var sepPen = new Pen(ThemeManager.Current.Border, 1))
+        {
+            g.DrawLine(sepPen, rect.Left, rect.Bottom - 1, rect.Right, rect.Bottom - 1);
+        }
 
-        // Selection accent indicator (left edge)
-        if (isSelected)
+        // Selection accent indicator (left edge of the first column)
+        if (isSelected && e.ColumnIndex == 0)
         {
             using var accentBrush = new SolidBrush(ThemeManager.Current.Accent);
             g.FillRectangle(accentBrush, rect.Left, rect.Top, 3, rect.Height);
         }
 
-        // SubItems
-        for (int i = 0; i < e.Item.SubItems.Count; i++)
-        {
-            var colRect = GetItemRect(e.ItemIndex, ItemBoundsPortion.Entire);
-            var subItem = e.Item.SubItems[i];
-            var textColor = isSelected ? ThemeManager.Current.Accent : (i == 0 ? ThemeManager.Current.TextPrimary : ThemeManager.Current.TextSecondary);
+        var subItem = e.SubItem;
+        if (subItem is null) return;
 
-            var sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
-            using var textBrush = new SolidBrush(textColor);
-            var textRect = new RectangleF(colRect.X + 16, colRect.Y, colRect.Width - 32, colRect.Height);
-            g.DrawString(subItem.Text, Font, textBrush, textRect, sf);
-        }
-    }
+        var textColor = isSelected
+            ? ThemeManager.Current.Accent
+            : (e.ColumnIndex == 0 ? ThemeManager.Current.TextPrimary : ThemeManager.Current.TextSecondary);
 
-    protected override void OnDrawSubItem(DrawListViewSubItemEventArgs e)
-    {
-        // Handled in OnDrawItem
+        var sf = new StringFormat { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
+        using var textBrush = new SolidBrush(textColor);
+        var textRect = new RectangleF(rect.X + 16, rect.Y, Math.Max(0, rect.Width - 32), rect.Height);
+        g.DrawString(subItem.Text, Font, textBrush, textRect, sf);
+
         e.DrawDefault = false;
-    }
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        // Background
-        var g = e.Graphics;
-        using var bgBrush = new SolidBrush(ThemeManager.Current.Surface1);
-        g.FillRectangle(bgBrush, ClientRectangle);
-
-        base.OnPaint(e);
     }
 }

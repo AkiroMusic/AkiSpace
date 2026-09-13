@@ -83,11 +83,15 @@ public sealed class SettingsDialog : Form
         };
 
         // --- Connection Card ---
+        // Explicit heights: the content grids are Dock.Fill inside the card, and a
+        // Panel's default ~100px height clips them to just the header. Sizing mirrors
+        // the row counts (8 / 6 / 2 / 1 rows) + header + padding; mainPanel scrolls.
         var connCard = new DoubleBezelCard
         {
             Title = "连接配置",
             Subtitle = "分身桌面的连接参数与模式",
             Width = 500,
+            Height = 460,
         };
         BuildConnectionCard(connCard);
         flow.Controls.Add(connCard);
@@ -98,6 +102,7 @@ public sealed class SettingsDialog : Form
             Title = "行为设置",
             Subtitle = "启动、托盘、热键与性能监控",
             Width = 500,
+            Height = 350,
         };
         BuildBehaviorCard(behaviorCard);
         flow.Controls.Add(behaviorCard);
@@ -108,6 +113,7 @@ public sealed class SettingsDialog : Form
             Title = "分身账户",
             Subtitle = "标准 RDP 模式下的登录凭据",
             Width = 500,
+            Height = 215,
         };
         BuildAccountCard(accountCard);
         flow.Controls.Add(accountCard);
@@ -118,6 +124,7 @@ public sealed class SettingsDialog : Form
             Title = "自动启动",
             Subtitle = "连接成功后在分身中启动程序",
             Width = 500,
+            Height = 170,
         };
         BuildLaunchCard(launchCard);
         flow.Controls.Add(launchCard);

@@ -84,6 +84,11 @@ public sealed class SetupDialog : Form
             Title = "环境检查",
             Subtitle = "桌面分身运行前置条件检测",
             Width = 720,
+            // The list inside is Dock.Fill, which collapses to ~0 in the card's
+            // default ~100px height — the dialog rendered with NO visible check
+            // rows at all ("打开了什么条目都没有显示"). Give the card an explicit
+            // height: padding(24*2) + header(~64) + list(400).
+            Height = 520,
         };
         BuildChecksCard(checksCard);
         flow.Controls.Add(checksCard);
@@ -139,7 +144,6 @@ public sealed class SetupDialog : Form
         _listView.FullRowSelect = true;
         _listView.GridLines = false;
         _listView.BorderStyle = BorderStyle.None;
-        _listView.BackColor = Color.Transparent;
         _listView.ForeColor = ThemeManager.Current.TextPrimary;
         _listView.Font = ThemeManager.Current.GetFontSans(12f);
         _listView.HeaderStyle = ColumnHeaderStyle.Nonclickable;
@@ -157,6 +161,9 @@ public sealed class SetupDialog : Form
         _homeGuideCard.Title = "⚠ 家庭版需要安装 RDP Wrapper";
         _homeGuideCard.Subtitle = "Windows Home 缺少 RDP 主机功能，需第三方解锁层";
         _homeGuideCard.Width = 720;
+        // Guide content (labels + 4 buttons + recheck) is Dock.Fill and would be
+        // clipped by the card's default height — same failure as the checks list.
+        _homeGuideCard.Height = 400;
         _homeGuideCard.Visible = false;
 
         // Override card colors for amber tint
@@ -241,6 +248,9 @@ public sealed class SetupDialog : Form
     {
         try
         {
+            // Placeholder row immediately: the listener probe can take several
+            // seconds, and a blank list made the dialog look broken.
+            RenderPlaceholder();
             var results = await _verifier.RunAllChecksAsync();
             if (IsDisposed) return;
             RenderChecks(results);
@@ -257,6 +267,17 @@ public sealed class SetupDialog : Form
             _listView.Items.Add(item);
             _listView.EndUpdate();
         }
+    }
+
+    private void RenderPlaceholder()
+    {
+        _listView.BeginUpdate();
+        _listView.Items.Clear();
+        var item = new ListViewItem("正在检查环境…");
+        item.SubItems.Add("…");
+        item.SubItems.Add("RDP 监听探测可能需要数秒，请稍候");
+        _listView.Items.Add(item);
+        _listView.EndUpdate();
     }
 
     private void RenderChecks(List<EnvCheckResult> results)
@@ -477,8 +498,6 @@ public sealed class SetupDialog : Form
         ForeColor = ThemeManager.Current.TextPrimary;
         Font = ThemeManager.Current.GetFontSans(13f);
 
-        _listView.BackColor = Color.Transparent;
-        _listView.ForeColor = ThemeManager.Current.TextPrimary;
         _listView.Invalidate();
 
         _homeGuideCard.Invalidate();
