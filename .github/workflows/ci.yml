@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore AkiSpace.slnx
+
+      - name: Build (warnings are errors)
+        run: dotnet build AkiSpace.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/AkiSpace.Tests/AkiSpace.Tests.csproj -c Release --no-build
