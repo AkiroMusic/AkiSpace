@@ -28,7 +28,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 ## Requirements
 
 - Windows 10/11 (**Home edition requires RDP Wrapper** — see below)
-- .NET 8 Desktop Runtime (or .NET 8 SDK installed)
+- .NET 10 Desktop Runtime (or .NET 10 SDK installed)
 - Admin rights only for "One-click Fix" (manifest is `asInvoker`; UAC elevation on demand for registry/firewall/service ops)
 - **One local account with password** for clone session (RDP forbids password-less remote logon)
 
@@ -38,9 +38,9 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 
 1. **Build**:
    ```
-   dotnet build src/AkiSpace/AkiSpace.csproj
+   dotnet build AkiSpace.csproj
    ```
-   Output: `src/AkiSpace/bin/Debug/net8.0-windows/AkiSpace.exe`
+   Output: `bin/Debug/net10.0-windows/AkiSpace.exe`
 
 2. **Unlock Multi-Session (Home edition required)**: See below.
 
@@ -108,7 +108,7 @@ Back in AkiSpace → "Environment Check/Repair" → "Recheck". All should show �
 
 AkiSpace's "One-Click Fix" installs a **single** inbound firewall rule. Windows Firewall never inspects loopback (`127.0.0.1`/`::1`) traffic — it is permitted at a higher WFP sub-layer — so an "allow 127.0.0.1" rule would be a no-op. Instead the fix adds one **block** rule on the RDP port (3389 or the configured port) with `remoteip=any`, which stops every genuine remote client while loopback RDP keeps working via the firewall's loopback bypass. Block rules also take precedence over allow rules, so this reliably closes the port remotely. It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so it can't shadow the block. Both Standard RDP and Child Session use this port.
 
-Other security defaults (current release v0.1.6; hardening landed earlier in v0.1.3):
+Other security defaults (current release v0.2.2; hardening landed earlier in v0.1.3):
 - **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. There is no built-in default password: the first Standard-RDP connect prompts for it and it is persisted DPAPI-encrypted.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
@@ -125,18 +125,18 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 ## Architecture
 
 ```
-Main Desktop (Session 1, Your Account)                  Clone Session (Session 2, AkiSpaceUser)
-┌────────────────────────────┐                ┌──────────────────────────┐
-│ AkiSpace Main Window       │                │  Target App (Fullscreen/ │
-│  ├─ RdpActiveXHost         │                │                          │
-│  │   (MsRdpClient11 Embed)  │◄─RDP 127.0.0.1►│  Independent Desktop     │
-│  ├─ RawInputMonitor (STA)  │                │                          │
-│  │   └─ WM_INPUT Relative  │                │  Mouse Replay (SendInput) │
-│  └─ MouseForwarder         │                │  (--agent, implemented)   │
-│      └─ Accumulate+10ms Batch│──Named Pipe──►│                          │
-│      └─ ClipCursor+Hide    │                │                          │
-│      └─ Alt Release        │                │                          │
-└────────────────────────────┘                └──────────────────────────┘
+Main Desktop (Session 1, Your Account)          Clone Session (Session 2, AkiSpaceUser)
+┌───────────────────────────────┐                   ┌────────────────────────────┐
+│ AkiSpace Main Window          │                   │  Target App (Fullscreen)   │
+│  ├─ RdpActiveXHost            │                   │                            │
+│  │   (MsRdpClient11 Embed)    │ ◄─ RDP 127.0.0.1► │  Independent Desktop       │
+│  ├─ RawInputMonitor (STA)     │                   │                            │
+│  │   └─ WM_INPUT Relative     │                   │  Mouse Replay (SendInput)  │
+│  └─ MouseForwarder            │                   │  (--agent, implemented)    │
+│      └─ Accumulate+10ms Batch │ ── Named Pipe ──► │                            │
+│      └─ ClipCursor+Hide       │                   │                            │
+│      └─ Alt Release           │                   │                            │
+└───────────────────────────────┘                   └────────────────────────────┘
 ```
 
 | Component | File | Responsibility |
@@ -167,17 +167,19 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 
 ```
 AkiSpace.slnx
-src/AkiSpace/          Main App (WinForms, net8.0-windows)
+AkiSpace.csproj        Main App (WinForms, net10.0-windows)
   Native/              P/Invoke + COM Interfaces
   Services/            Session Mgmt/Settings/Env Check/Process Launch
   Ipc/                 Named Pipes + Binary Frame Protocol
   Input/               Mouse/Keyboard/Cursor
   Controls/            RDP ActiveX Host
   Forms/               Main Window + Dialogs
-tools/AkiSpace.SelfTest/   Self-Test (Protocol/Settings/Env Check/UI Smoke/E2E Connect)
+  Common/              Theme/RegistryKeys
+test/                  Unit tests (tests, xUnit)
+selftest/              Env-check console (selftest, Protocol/Settings/Env Check/UI Smoke/E2E Connect)
 ```
 
-Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
+Run Self-Test: `dotnet run --project selftest`
 
 ---
 
@@ -215,7 +217,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 ## 系统要求
 
 - Windows 10/11（**家庭版需要 RDP Wrapper 解锁**，见下文）
-- .NET 8 Desktop Runtime（或已安装 .NET 8 SDK）
+- .NET 10 Desktop Runtime（或已安装 .NET 10 SDK）
 - 管理员权限仅在「一键修复」时需要（应用清单为 `asInvoker`，点击修复时通过 UAC 动态提权执行注册表/防火墙/服务操作）
 - **一个带密码的本地账户**用于分身会话（RDP 不允许无密码账户远程登录）
 
@@ -225,9 +227,9 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 
 1. **构建**：
    ```
-   dotnet build src/AkiSpace/AkiSpace.csproj
+   dotnet build AkiSpace.csproj
    ```
-   产物：`src/AkiSpace/bin/Debug/net8.0-windows/AkiSpace.exe`
+   产物：`bin/Debug/net10.0-windows/AkiSpace.exe`
 
 2. **解锁多会话（家庭版必需）**：见下节。
 
@@ -295,7 +297,7 @@ Restart-Service TermService -Force
 
 AkiSpace 的「一键修复」只下发**一条**防火墙规则。Windows 防火墙从不检查回环（`127.0.0.1`/`::1`）流量——它在更高的 WFP 子层被放行——所以「允许 127.0.0.1」这类规则其实是空操作。取而代之，修复会在 RDP 端口（3389 或「设置」中配置的端口）上添加一条 `remoteip=any` 的入站**阻断**规则：它拦下所有真正来自远端的连接，而回环 RDP 凭借防火墙的回环旁路照常工作。阻断规则的优先级高于允许规则，因此能可靠地对远端关闭该端口。如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），以免它干扰阻断效果。标准 RDP 模式和子会话模式都通过此端口连接。
 
-v0.1.6（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认：
+v0.2.2（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认：
 - **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。不再内置默认密码：首次「连接」标准 RDP 时会弹窗询问并加密保存。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。
@@ -314,13 +316,13 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 ```
 主桌面 (Session 1, 你的账户)                  分身会话 (Session 2, AkiSpaceUser)
 ┌────────────────────────────┐                ┌──────────────────────────┐
-│ AkiSpace 主窗口            │                │  目标程序 (全屏/自动化)   │
+│ AkiSpace 主窗口            │                │  目标程序 (全屏/自动化)  │
 │  ├─ RdpActiveXHost         │                │                          │
-│  │   (MsRdpClient11 内嵌)  │◄─RDP 127.0.0.1►│  独立桌面                 │
+│  │   (MsRdpClient11 内嵌)  │◄─RDP 127.0.0.1►│  独立桌面                │
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT 相对增量  │                │                          │
-│  └─ MouseForwarder         │                │  Mouse Replay (SendInput) │
-│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent, 已实现)       │
+│  └─ MouseForwarder         │                │ Mouse Replay (SendInput) │
+│      └─ 累积+10ms 批处理   │──Named Pipe──► │  (--agent, 已实现)       │
 │      └─ ClipCursor+隐藏    │                │                          │
 │      └─ Alt 释放           │                │                          │
 └────────────────────────────┘                └──────────────────────────┘
@@ -354,14 +356,16 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 
 ```
 AkiSpace.slnx
-src/AkiSpace/          主程序 (WinForms, net8.0-windows)
+AkiSpace.csproj        主程序 (WinForms, net10.0-windows)
   Native/              P/Invoke + COM 接口
   Services/            会话管理/设置/环境检查/进程启动
   Ipc/                 命名管道协议
   Input/               鼠标/键盘/光标
   Controls/            RDP ActiveX 宿主
   Forms/               主窗口 + 对话框
-tools/AkiSpace.SelfTest/   自检程序（协议/设置/环境检测/UI 冒烟/E2E 连接）
+  Common/              主题/注册表常量
+test/                  单元测试（tests，xUnit）
+selftest/              环境自检控制台（selftest，协议/设置/环境检测/UI 冒烟/E2E 连接）
 ```
 
-运行自检：`dotnet run --project tools/AkiSpace.SelfTest`
+运行自检：`dotnet run --project selftest`

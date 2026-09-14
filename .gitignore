@@ -1,14 +1,18 @@
-# Build outputs
+# build
 bin/
 obj/
 dist/
+publish/
 *.exe
 *.dll
 *.pdb
+*.msi
+*.msm
+*.msp
 *.deps.json
 *.runtimeconfig.json
 
-# IDE/Editor
+# ide
 .vs/
 .vscode/
 *.swp
@@ -16,12 +20,13 @@ dist/
 *~
 .idea/
 
-# OS
+# os
 Thumbs.db
 Desktop.ini
 .DS_Store
 
-# Logs
+# logs
+logs/
 *.log
 *.log.*
 
@@ -30,7 +35,7 @@ TestResults/
 test-results/
 *.trx
 
-# Temporary
+# temp
 tmp/
 *.tmp
 
@@ -38,19 +43,11 @@ tmp/
 packages/
 *.nupkg
 
-# User-specific
+# user
 *.user
 *.suo
 
-# Build outputs
-*.msi
-*.msm
-*.msp
-
-# Publish outputs
-publish/
-
-# Tooling/session state
+# tooling
 .omo/
 .codegraph/
 .zcode/
