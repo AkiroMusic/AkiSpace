@@ -112,6 +112,7 @@ Other security defaults (current release v0.2.2; hardening landed earlier in v0.
 - **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. There is no built-in default password: the first Standard-RDP connect prompts for it and it is persisted DPAPI-encrypted.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
+- **Pipe authentication boundary**: the nonce file is readable by the clone account, so anyone able to execute code as that account can reach the pipe — the real defense is the RDP credential plus least privilege on the clone account, not the nonce.
 
 ```powershell
 # Optional belt-and-suspenders: confirm the AkiSpace block rule exists and the default public rule is gone
@@ -301,6 +302,7 @@ v0.2.2（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认
 - **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。不再内置默认密码：首次「连接」标准 RDP 时会弹窗询问并加密保存。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。
+- **管道认证边界**：nonce 文件对分身账户可读，能以该账户执行代码者即可访问管道——真正的防线是 RDP 凭据＋分身账户最小权限，而非 nonce 本身。
 
 ```powershell
 # 可选：双保险，确认 AkiSpace 阻断规则已存在且默认公开规则已删除

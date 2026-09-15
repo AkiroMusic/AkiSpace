@@ -199,7 +199,7 @@ public sealed class SettingsDialog : Form
         AddRow(grid, 1, "分身桌面宽度", _numWidth, "像素，建议匹配显示器分辨率");
         AddRow(grid, 2, "分身桌面高度", _numHeight, "像素，建议匹配显示器分辨率");
         AddRow(grid, 3, "颜色深度", _numColorDepth, "位，32位为真彩色");
-        AddRow(grid, 4, "RDP 端口", _numPort, "默认 3389，仅当你在系统层面改过 RDP 监听端口时同步修改");
+        AddRow(grid, 4, "RDP 端口", _numPort, "仅非 3389 生效；保持 3389 则跟随系统 RDP 监听端口");
         AddRow(grid, 5, "", _chkSmartSizing);
         AddRow(grid, 6, "", _chkShortcutsRemote);
         // Add audio redirect in next row

@@ -12,12 +12,6 @@ public interface IRawInputMonitor
 {
     /// <summary>Subscribes to relative mouse moves. Returns an IDisposable unsubscribe token.</summary>
     IDisposable Subscribe(Action<RelativeMouseMoveEventArgs> handler);
-
-    /// <summary>Whether the monitor is currently running.</summary>
-    bool IsRunning { get; }
-
-    void Start();
-    void Stop();
 }
 
 /// <summary>
@@ -45,11 +39,6 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
         _logger = logger;
     }
 
-    public bool IsRunning
-    {
-        get { lock (_gate) return _thread != null && _thread.IsAlive; }
-    }
-
     public IDisposable Subscribe(Action<RelativeMouseMoveEventArgs> handler)
     {
         lock (_gate)
@@ -62,18 +51,6 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
                 StartCoreLocked();
             return sub;
         }
-    }
-
-    public void Start()
-    {
-        lock (_gate) StartCoreLocked();
-    }
-
-    public void Stop()
-    {
-        Thread? dying;
-        lock (_gate) dying = StopCoreLocked();
-        JoinStopped(dying);
     }
 
     private void StartCoreLocked()

@@ -63,9 +63,10 @@ public sealed class ProcessLauncher
                 taskDefinition.Principal.LogonType = TaskLogonInteractiveToken;
                 taskDefinition.Principal.RunLevel = TaskRunLevelHighest;
 
-                // Action: exec the target program
+                // Action: exec the target program (quote paths with spaces:
+                // task XML does not quote for us, and the path would truncate)
                 dynamic action = taskDefinition.Actions.Create(TaskActionExec);
-                action.Path = exePath;
+                action.Path = exePath.Contains(' ') ? $"\"{exePath}\"" : exePath;
                 if (!string.IsNullOrWhiteSpace(arguments))
                     action.Arguments = arguments;
 
@@ -143,9 +144,9 @@ public sealed class ProcessLauncher
             {
                 if ((int)registeredTask.State == TaskStateRunning) return true;
             }
-            catch
+            catch (Exception ex) when (ex is COMException or InvalidCastException)
             {
-                // COM hiccup while polling; retry until the deadline.
+                // COM hiccup while polling (stale RCW/unexpected state); retry until the deadline.
             }
             Thread.Sleep(50);
         }

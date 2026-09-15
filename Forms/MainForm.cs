@@ -296,7 +296,10 @@ public sealed class MainForm : Form
             int value = 1;
             User32.DwmSetWindowAttribute(Handle, User32.DWMWA_USE_IMMERSIVE_DARK_MODE, ref value, sizeof(int));
         }
-        catch { }
+        catch (Exception)
+        {
+            // DWM dark-mode attribute is best-effort; ignore on older Windows.
+        }
 
         _statusTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _statusTimer.Tick += (_, _) => RefreshStatus();

@@ -226,11 +226,15 @@ public sealed class MouseForwarder : IDisposable
         _accumulationStartedAt = 0;
     }
 
-    private static async Task SendBatchAsync(PipeConnection connection, byte[] payload)
+    private async Task SendBatchAsync(PipeConnection connection, byte[] payload)
     {
         try
         {
             await connection.SendAsync(IpcPayloadType.RelativeMouseBatch, payload).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not (IOException or ObjectDisposedException))
+        {
+            _logger.LogWarning(ex, "Unexpected mouse batch send failure");
         }
         catch (Exception)
         {

@@ -375,7 +375,7 @@ public sealed class EnvironmentVerifier
             var errTask = p.StandardError.ReadToEndAsync();
             if (!p.WaitForExit(5000))
             {
-                try { p.Kill(entireProcessTree: true); } catch { }
+                try { p.Kill(entireProcessTree: true); } catch (Exception) { /* best-effort; exit code carries the verdict */ }
                 return false;
             }
             // Parameterless WaitForExit flushes any pending async output before we read.
@@ -452,8 +452,8 @@ public sealed class EnvironmentVerifier
             var exited = p.WaitForExit(timeoutMs);
             if (!exited)
             {
-                try { p.Kill(entireProcessTree: true); } catch { }
-                try { p.WaitForExit(2000); } catch { }
+                try { p.Kill(entireProcessTree: true); } catch (Exception) { /* best-effort; exit code carries the verdict */ }
+                try { p.WaitForExit(2000); } catch (Exception) { /* best-effort; already timed out */ }
                 LogWarning($"netsh timed out after {timeoutMs}ms: {args}");
                 return false;
             }
