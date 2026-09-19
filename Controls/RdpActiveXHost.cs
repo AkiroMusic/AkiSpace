@@ -291,7 +291,8 @@ public sealed class RdpActiveXHost : AxHost
             {
                 SetComProperty(adv, "RDPPort", rdpPort);
                 SetComProperty(adv, "EnableCredSspSupport", true);
-                SetComProperty(adv, "EnableWindowsKey", 1);
+                // EnableWindowsKey=1 会让 mstscax 把本地 Win 键状态同步进远端，焦点切换时 Win up 丢失会让远端 Win 永久卡下（所有按键变 Win+X），跟随设置联动。
+                SetComProperty(adv, "EnableWindowsKey", keyboardHookToRemote ? 1 : 0);
                 SetComProperty(adv, "SmartSizing", smartSizing);
             }
 
