@@ -6,10 +6,9 @@ using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 namespace AkiSpace.Ui;
 
 /// <summary>
-/// Settings window — the four cards of the old WinForms SettingsDialog rebuilt in
-/// WPF. Saving writes the same AppSettings fields through SettingsService.Update;
-/// the password field only overwrites when non-empty (PasswordBox cannot show the
-/// stored value, which also removes the accidental-resave footgun).
+/// Settings window. Saving writes all AppSettings fields through
+/// SettingsService.Update; the password field only overwrites when non-empty,
+/// so saving without typing leaves the stored password untouched.
 /// </summary>
 public partial class SettingsWindow : ChromeWindow
 {

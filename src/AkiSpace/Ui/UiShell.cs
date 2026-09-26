@@ -16,8 +16,8 @@ namespace AkiSpace.Ui;
 
 /// <summary>
 /// WPF application shell: owns the <see cref="ConnectionController"/>, tray,
-/// hotkeys, status timer and the <see cref="MainWindow"/>. This is the WPF
-/// counterpart of the old WinForms MainForm lifecycle (OnLoad/OnFormClosing).
+/// hotkeys, status timer and the <see cref="MainWindow"/>. The window renders
+/// controller state; startup and shutdown sequencing lives here.
 /// </summary>
 internal sealed class UiShell
 {

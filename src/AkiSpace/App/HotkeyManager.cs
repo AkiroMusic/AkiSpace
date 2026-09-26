@@ -6,9 +6,8 @@ namespace AkiSpace.App;
 
 /// <summary>
 /// Global hotkeys (Ctrl+Shift+D toggle connect, Ctrl+Alt+Space show window),
-/// extracted from MainForm. Registers on its own hidden Win32 window instead of
-/// the shell's window, so the behaviour is identical under the WinForms and WPF
-/// message pumps and the hotkeys survive the shell being hidden to the tray.
+/// registered on a dedicated hidden Win32 window so they keep working while the
+/// main window is hidden to the tray.
 /// </summary>
 public sealed class HotkeyManager : IDisposable
 {

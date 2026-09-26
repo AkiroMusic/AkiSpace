@@ -111,20 +111,9 @@ public partial class MainWindow : Window
 
     private void OnSettings(object sender, RoutedEventArgs e)
     {
-        var log = AppShellServices.LoggerFor<MainWindow>();
-        log.LogDebug("Opening settings window");
-        try
-        {
-            var settings = new SettingsWindow(AppShellServices.Settings);
-            settings.Owner = this;
-            var result = settings.ShowDialog();
-            log.LogDebug("Settings dialog closed, result={Result}", result);
-        }
-        catch (Exception ex)
-        {
-            log.LogError(ex, "Settings dialog failed");
-            throw;
-        }
+        var settings = new SettingsWindow(AppShellServices.Settings);
+        settings.Owner = this;
+        settings.ShowDialog();
         _controller.SetStatusText("连接: 设置已保存");
     }
 

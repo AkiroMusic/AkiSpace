@@ -172,8 +172,9 @@ src/AkiSpace/          Main App (WPF + WinForms interop, net8.0-windows)
   Services/            Session Mgmt/Settings/Env Check/Process Launch
   Ipc/                 Named Pipes + Binary Frame Protocol
   Input/               Mouse/Keyboard/Cursor
+  App/                 Connect Orchestration/Tray/Hotkeys
   Controls/            RDP ActiveX Host
-  Forms/               Main Window + Dialogs
+  Ui/                  WPF Windows + Theme
 tools/AkiSpace.SelfTest/   Self-Test (Protocol/Settings/Env Check/UI Smoke/E2E Connect)
 ```
 
@@ -359,8 +360,9 @@ src/AkiSpace/          主程序 (WPF + WinForms interop, net8.0-windows)
   Services/            会话管理/设置/环境检查/进程启动
   Ipc/                 命名管道协议
   Input/               鼠标/键盘/光标
+  App/                 连接编排/托盘/热键
   Controls/            RDP ActiveX 宿主
-  Forms/               主窗口 + 对话框
+  Ui/                  WPF 窗口 + 主题
 tools/AkiSpace.SelfTest/   自检程序（协议/设置/环境检测/UI 冒烟/E2E 连接）
 ```
 

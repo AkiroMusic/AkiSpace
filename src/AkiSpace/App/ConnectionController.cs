@@ -26,9 +26,8 @@ public sealed record ConnectUiState(
 
 /// <summary>
 /// Framework-agnostic owner of the connect orchestration, the RDP host lifecycle,
-/// agent launch/nonce management and status polling. Extracted 1:1 from the
-/// WinForms MainForm during the frontend rewrite; logic is unchanged — only the
-/// control mutations became <see cref="ConnectUiState"/> emissions.
+/// agent launch/nonce management and status polling. The shell renders
+/// <see cref="ConnectUiState"/> and hosts the <see cref="RdpActiveXHost"/> control.
 /// </summary>
 public sealed class ConnectionController
 {
@@ -125,10 +124,10 @@ public sealed class ConnectionController
     // ---------------------------------------------------------------- Lifecycle
 
     /// <summary>
-    /// Startup sequence that used to live in MainForm.OnLoad (after the shell has
-    /// created its timer and applied window styling): preset the pipe DACL for the
-    /// clone account BEFORE game-mouse restore, initialize the forwarder, sweep
-    /// stale nonces, and run the first status refresh.
+    /// Startup sequence, called by the shell after it has created its status timer
+    /// and applied window styling: preset the pipe DACL for the clone account BEFORE
+    /// game-mouse restore, initialize the forwarder, sweep stale nonces, and run the
+    /// first status refresh.
     /// </summary>
     public void OnShellLoaded()
     {
@@ -150,9 +149,9 @@ public sealed class ConnectionController
     }
 
     /// <summary>
-    /// Shutdown sequence that used to live in MainForm.OnFormClosing: disable game
-    /// mouse, tear down the RDP host, and — only for explicit user closes, never the
-    /// OS-shutdown path — optionally log off the child session.
+    /// Shutdown sequence: disable game mouse, tear down the RDP host, and — only for
+    /// explicit user closes, never the OS-shutdown path — optionally log off the
+    /// child session.
     /// </summary>
     public void OnAppClosing(bool userInitiated)
     {
