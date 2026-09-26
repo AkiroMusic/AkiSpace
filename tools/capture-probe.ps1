@@ -24,6 +24,7 @@ Add-Type -AssemblyName System.Drawing
 # Make THIS process PerMonitorV2-aware so GetWindowRect returns physical pixels
 # (a virtualized view would crop PrintWindow output on scaled displays).
 Add-Type @"
+using System;
 using System.Runtime.InteropServices;
 public static class DpiFix {
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
