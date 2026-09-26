@@ -133,65 +133,82 @@ void Check(string name, bool pass, string? detail = null)
     Console.WriteLine($"[INFO] Machine RDP state: {(rdpCheck.Pass ? "enabled" : "disabled (expected on Home default)")}");
 }
 
-// ---- 8. UI smoke test: SetupDialog renders + runs checks ----
-// Runs in a separate STA thread (WinForms requirement), shows the dialog
-// briefly, captures a screenshot, then closes.
+// ---- 8. UI smoke test: SetupWindow renders + runs checks (WPF) ----
+// Runs in a separate STA thread (WPF requirement), shows the window briefly with a
+// dispatcher frame pumping the async checks, captures the window content, closes.
 // SKIP: requires an interactive desktop session (not a service/headless context).
 {
-    // Skip if no interactive desktop (e.g., running as a service or in CI).
     if (!Environment.UserInteractive || Environment.GetEnvironmentVariable("CI") == "true")
     {
         Console.WriteLine("[SKIP] UI smoke test: non-interactive session");
     }
     else
     {
-    var screenshotPath = Path.Combine(Path.GetTempPath(), "akspace_setup_dialog.png");
-    Exception? uiError = null;
-    var uiThread = new Thread(() =>
-    {
-        try
+        var screenshotPath = Path.Combine(Path.GetTempPath(), "akspace_setup_window.png");
+        Exception? uiError = null;
+        var uiThread = new Thread(() =>
         {
-            var mgr = new ChildSessionManager(Microsoft.Extensions.Logging.Abstractions.NullLogger<ChildSessionManager>.Instance);
-            var envSettings2 = new AkiSpace.Services.SettingsService(Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance);
-            var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr, envSettings2);
-            using var dialog = new AkiSpace.Forms.SetupDialog(
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Forms.SetupDialog>.Instance,
-                verifier, mgr);
-            dialog.Show();
-            // let it render + run checks
-            System.Threading.Thread.Sleep(1500);
-            // capture the dialog window
-            using var bmp = new System.Drawing.Bitmap(dialog.Width, dialog.Height);
-            using (var g = System.Drawing.Graphics.FromImage(bmp))
+            try
             {
-                var hdc = g.GetHdc();
-                try
+                var mgr = new ChildSessionManager(Microsoft.Extensions.Logging.Abstractions.NullLogger<ChildSessionManager>.Instance);
+                var envSettings2 = new AkiSpace.Services.SettingsService(Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance);
+                var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr, envSettings2);
+
+                var app = new System.Windows.Application { ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown };
+                app.Resources.MergedDictionaries.Add(new System.Windows.ResourceDictionary
                 {
-                    var rect = new AkiSpace.Native.User32.RECT(0, 0, dialog.Width, dialog.Height);
-                    // DrawToBitmap is simpler and reliable for WinForms
-                    g.ReleaseHdc(hdc);
+                    Source = new Uri("pack://application:,,,/AkiSpace;component/Ui/Theme/Styles.xaml"),
+                });
+                AkiSpace.Ui.Theme.WpfThemeHost.Initialize();
+
+                var window = new AkiSpace.Ui.SetupWindow(
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Ui.SetupWindow>.Instance,
+                    verifier, mgr, envSettings2);
+                window.Show();
+
+                // Pump the dispatcher until RunAllChecksAsync completes (the listener
+                // probe alone retries 3x and can take ~6s when RDP is down), max 20s.
+                var rows = (System.Collections.Generic.List<AkiSpace.Ui.SetupWindow.CheckRow>?)null;
+                var deadline = DateTime.UtcNow.AddSeconds(20);
+                while (DateTime.UtcNow < deadline)
+                {
+                    var frame = new System.Windows.Threading.DispatcherFrame();
+                    var pump = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1000) };
+                    pump.Tick += (_, _) => { pump.Stop(); frame.Continue = false; };
+                    pump.Start();
+                    System.Windows.Threading.Dispatcher.PushFrame(frame);
+                    rows = window.ChecksList.ItemsSource as System.Collections.Generic.List<AkiSpace.Ui.SetupWindow.CheckRow>;
+                    if (rows is { Count: >= 10 }) break;
                 }
-                catch { }
+
+                // Render the window visuals directly (pure WPF — no airspace).
+                var width = (int)double.Max(window.ActualWidth, 400);
+                var height = (int)double.Max(window.ActualHeight, 300);
+                var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                rtb.Render(window);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                using (var fs = File.Create(screenshotPath))
+                    encoder.Save(fs);
+
+                Check("SetupWindow rendered + all checks listed", File.Exists(screenshotPath) && rows is { Count: >= 10 },
+                    $"screenshot={File.Exists(screenshotPath)} rows={rows?.Count ?? 0}");
+
+                window.Close();
+                app.Shutdown();
             }
-            // Use DrawToBitmap (reliable for WinForms, no foreground needed)
-            using var bmp2 = new System.Drawing.Bitmap(dialog.Width, dialog.Height);
-            dialog.DrawToBitmap(bmp2, new System.Drawing.Rectangle(0, 0, dialog.Width, dialog.Height));
-            bmp2.Save(screenshotPath);
-            dialog.Close();
-            Check("SetupDialog rendered + checks ran", File.Exists(screenshotPath), screenshotPath);
-        }
-        catch (Exception ex)
+            catch (Exception ex)
+            {
+                uiError = ex;
+            }
+        });
+        uiThread.SetApartmentState(ApartmentState.STA);
+        uiThread.Start();
+        uiThread.Join(TimeSpan.FromSeconds(20));
+        if (uiError != null)
         {
-            uiError = ex;
+            Check("SetupWindow UI smoke test", false, uiError.Message);
         }
-    });
-    uiThread.SetApartmentState(ApartmentState.STA);
-    uiThread.Start();
-    uiThread.Join(TimeSpan.FromSeconds(15));
-    if (uiError != null)
-    {
-        Check("SetupDialog UI smoke test", false, uiError.Message);
-    }
     } // end else (interactive)
 }
 
