@@ -1,9 +1,13 @@
 using System.Diagnostics;
 using AkiSpace.Common;
-using AkiSpace.Forms;
 using AkiSpace.Services;
+using AkiSpace.Ui;
+using AkiSpace.Ui.Theme;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ResourceDictionary = System.Windows.ResourceDictionary;
+using ShutdownMode = System.Windows.ShutdownMode;
+using WpfApplication = System.Windows.Application;
 
 namespace AkiSpace;
 
@@ -60,16 +64,40 @@ static class Program
 
         try
         {
-            // Theme initialization touches WinForms/DWM and user settings; a throw here
-            // must hit the same fatal-error path as everything else instead of killing
-            // the process silently before the try block was entered.
+            // Theme initialization touches user settings; a throw here must hit the
+            // same fatal-error path as everything else instead of killing the process
+            // silently before the try block was entered.
             var settingsService = provider.GetRequiredService<SettingsService>();
             var themeManager = ThemeManager.Current;
             themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
 
             var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
             logger.LogInformation("AkiSpace starting (build {Version})", version);
-            Application.Run(provider.GetRequiredService<MainForm>());
+
+            // WPF shell + WinForms interop (WindowsFormsHost → AxHost). The WinForms
+            // stack stays initialized for its dialogs/components used by the App layer.
+            System.Windows.Forms.Application.EnableVisualStyles();
+            System.Windows.Forms.Integration.WindowsFormsHost.EnableWindowsFormsInterop();
+
+            var app = new WpfApplication { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            app.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("pack://application:,,,/AkiSpace;component/Ui/Theme/Styles.xaml"),
+            });
+            WpfThemeHost.Initialize();
+            app.DispatcherUnhandledException += (_, e) =>
+            {
+                logger.LogError(e.Exception, "UI thread exception");
+                e.Handled = true;
+            };
+
+            AppShellServices.Init(
+                loggerFactory, settingsService,
+                provider.GetRequiredService<EnvironmentVerifier>(),
+                provider.GetRequiredService<ChildSessionManager>());
+
+            var shell = new UiShell(provider);
+            app.Run(shell.Main);
             logger.LogInformation("AkiSpace exited cleanly");
         }
         catch (Exception ex)
@@ -281,9 +309,6 @@ static class Program
         services.AddSingleton<Input.MouseForwarder>();
         // (PipeClient/AgentRunner are agent-mode-only; the GUI process only ever runs
         // the server side of the pipe, so they are NOT registered here.)
-
-        // UI
-        services.AddTransient<MainForm>();
 
         return services;
     }
