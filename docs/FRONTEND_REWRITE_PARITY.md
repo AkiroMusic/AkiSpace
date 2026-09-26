@@ -60,3 +60,31 @@
 2. 环境检查窗口检查完成后拍 → 帧差 = 0 px，10 项检查全部可见。
 3. 设置窗口打开拍 → 帧差 = 0 px，四卡全部内容可见。
 4. 连接成功后主窗口拍 → 分身桌面在视图内正常渲染。
+
+## 重写结果（v0.3.0，frontend-rewrite 分支）
+
+逐项核对结果：M1–M19、S1–S5、C1–C6 全部覆盖。真机验证记录：
+
+- 主窗口/设置/环境检查/连接中 截图渲染正常，两帧帧差 0（仅 CPU 数字跳动）。
+- 连接流程点击 → 状态机切换 → `ConnectToChildSession` 发起（本机当时 RDP 监听器未启动，
+  属环境问题，与前端无关；旧版在同环境行为相同）。
+- 设置保存 result=True，settings.json 落盘，ClonePassword 保持 DPAPI 保护。
+- WM_CLOSE 优雅退出：Shell shut down → exited cleanly，进程正常结束。
+- AkiSpace.SelfTest 全部通过（含 WPF 版环境检查窗口冒烟测试）。
+
+### 与旧版的有意偏差（均为改进，非回归）
+
+| 项 | 旧版 | 新版 | 理由 |
+|---|------|------|------|
+| C4 密码显示 | 掩码 TextBox 预填解密后的密码 | PasswordBox 留空=保持现有密码 | PasswordBox 无法程序化预填；避免无意的密码重写 |
+| C2 连接模式 | ComboBox 下拉 | 两个 RadioButton 分段选择 | 免写 ComboBox 暗色模板，视觉更清晰 |
+| 主窗口配色 | 硬编码深色 (24,24,27) | ThemeManager Ethereal Glass 调色板 | 统一设计系统，主题跟随设置 |
+| 主题下拉 | 未做（可选增项） | 未做 | 控制范围；设置 Theme 字段仍被 ThemeManager 读取 |
+
+### 架构落点
+
+- `App/`：ConnectionController / TrayIconService / HotkeyManager（框架无关编排层）。
+- `Ui/`：MainWindow / SettingsWindow / SetupWindow / PasswordPromptWindow / UiShell /
+  Theme(WpfThemeHost + Styles.xaml) / Controls(NumberBox)。
+- `Controls/RdpActiveXHost.cs` 原样保留，经 WindowsFormsHost 托管（spike 验证）。
+- `Ipc/` `Input/` `Services/` `Native/` `FileLogger.cs` 零改动；45 个测试全绿。

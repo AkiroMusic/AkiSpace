@@ -167,7 +167,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 
 ```
 AkiSpace.slnx
-src/AkiSpace/          Main App (WinForms, net8.0-windows)
+src/AkiSpace/          Main App (WPF + WinForms interop, net8.0-windows)
   Native/              P/Invoke + COM Interfaces
   Services/            Session Mgmt/Settings/Env Check/Process Launch
   Ipc/                 Named Pipes + Binary Frame Protocol
@@ -354,7 +354,7 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 
 ```
 AkiSpace.slnx
-src/AkiSpace/          主程序 (WinForms, net8.0-windows)
+src/AkiSpace/          主程序 (WPF + WinForms interop, net8.0-windows)
   Native/              P/Invoke + COM 接口
   Services/            会话管理/设置/环境检查/进程启动
   Ipc/                 命名管道协议
