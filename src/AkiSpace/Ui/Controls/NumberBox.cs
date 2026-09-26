@@ -10,9 +10,8 @@ using TextBox = System.Windows.Controls.TextBox;
 namespace AkiSpace.Ui.Controls;
 
 /// <summary>
-/// Minimal numeric input mirroring the StyledNumericUpDown semantics the settings
-/// were built against: bounded value, fixed increment, arrow buttons, direct text
-/// entry with clamping on focus loss. WPF has no built-in NumericUpDown.
+/// Bounded numeric input: fixed increment, arrow buttons, direct text entry with
+/// clamping on focus loss. WPF has no built-in NumericUpDown.
 /// </summary>
 [TemplatePart(Name = PartText, Type = typeof(TextBox))]
 [TemplatePart(Name = PartUp, Type = typeof(RepeatButton))]

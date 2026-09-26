@@ -17,14 +17,6 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        // --uiprobe: WPF hosting spike for the frontend rewrite (diagnostics only,
-        // no single-instance/pipe/global state — runs alongside the real app).
-        if (args.Length > 0 && args[0].Equals("--uiprobe", StringComparison.OrdinalIgnoreCase))
-        {
-            Ui.UiProbe.Run(args);
-            return;
-        }
-
         // --fix-env [--disable-wrapper]: re-launched elevated to apply environment fixes.
         if (args.Length > 0 && args[0].Equals("--fix-env", StringComparison.OrdinalIgnoreCase))
         {

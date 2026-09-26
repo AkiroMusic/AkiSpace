@@ -556,7 +556,7 @@ public sealed class RdpActiveXHost : AxHost
     /// Cache hits are answered from any thread with a pure Win32 liveness check; cache
     /// misses fall back to discovery ONLY on the UI thread (EnumChildWindows against
     /// this control's handle is not safe elsewhere) and return Zero off-thread — the
-    /// 1 Hz UI-thread refresh in MainForm keeps the cache warm for the 200 Hz poller.
+    /// shell's 1 Hz UI-thread refresh keeps the cache warm for the 200 Hz poller.
     /// </summary>
     public IntPtr GetInputCaptureWindowHandle()
     {

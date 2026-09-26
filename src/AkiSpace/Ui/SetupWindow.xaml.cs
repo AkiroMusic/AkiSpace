@@ -23,9 +23,9 @@ using Thickness = System.Windows.Thickness;
 namespace AkiSpace.Ui;
 
 /// <summary>
-/// Environment check &amp; fix window — the old WinForms SetupDialog rebuilt in WPF.
-/// Check flow, home-guide card and the elevated one-click fix re-launch
-/// (--fix-env) behave identically.
+/// Environment check &amp; fix window: async environment checks, a conditional
+/// home-edition installation guide and the elevated one-click fix re-launch
+/// (--fix-env).
 /// </summary>
 public partial class SetupWindow : ChromeWindow
 {

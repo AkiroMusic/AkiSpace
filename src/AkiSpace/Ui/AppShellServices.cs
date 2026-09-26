@@ -4,9 +4,7 @@ using Microsoft.Extensions.Logging;
 namespace AkiSpace.Ui;
 
 /// <summary>
-/// Static access point for the services the WPF windows need (set once by the
-/// shell at startup). Keeps window constructors parameter-light without a
-/// full-blown MVVM locator.
+/// Services shared by the WPF windows, set once by the shell at startup.
 /// </summary>
 internal static class AppShellServices
 {

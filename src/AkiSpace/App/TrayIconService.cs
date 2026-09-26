@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging;
 namespace AkiSpace.App;
 
 /// <summary>
-/// System tray presence (NotifyIcon + context menu), extracted from MainForm.
-/// The shell subscribes to the request events and calls <see cref="SetConnected"/> /
-/// <see cref="SetVisible"/> as state changes. Dispose is idempotent (the shutdown
-/// path re-enters it via Application.Exit / Shutdown → Closing).
+/// System tray presence (NotifyIcon + context menu). The shell subscribes to the
+/// request events and calls <see cref="SetConnected"/> / <see cref="SetVisible"/>
+/// as state changes. Dispose is idempotent (the shutdown path re-enters it via
+/// Application.Exit / Shutdown → Closing).
 /// </summary>
 public sealed class TrayIconService : IDisposable
 {
