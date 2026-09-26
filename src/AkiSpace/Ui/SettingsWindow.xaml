@@ -1,0 +1,154 @@
+<chrome:ChromeWindow x:Class="AkiSpace.Ui.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:AkiSpace.Ui"
+        xmlns:ui="clr-namespace:AkiSpace.Ui.Controls"
+        Title="设置" Width="580" Height="720"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
+        Background="{DynamicResource Brush.BgBase}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="24">
+
+                <!-- 连接配置 -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="连接配置" />
+                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="分身桌面的连接参数与模式" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="连接模式" />
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
+                                             Content="标准RDP（不同用户）" GroupName="ConnMode" IsChecked="True" />
+                                <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
+                                             Content="子会话（同一用户）" GroupName="ConnMode" Margin="8,0,0,0" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身桌面宽度" Margin="0,12,16,0" />
+                            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,12,0,0">
+                                <ui:NumberBox x:Name="NumWidth" Minimum="800" Maximum="7680" Increment="160" Width="160" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="像素，建议匹配显示器分辨率" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身桌面高度" Margin="0,12,16,0" />
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,12,0,0">
+                                <ui:NumberBox x:Name="NumHeight" Minimum="600" Maximum="4320" Increment="120" Width="160" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="像素，建议匹配显示器分辨率" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel}" Text="颜色深度" Margin="0,12,16,0" />
+                            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
+                                <ui:NumberBox x:Name="NumColorDepth" Minimum="8" Maximum="32" Increment="8" Width="120" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="位，32位为真彩色" />
+                            </StackPanel>
+
+                            <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel}" Text="RDP 端口" Margin="0,12,16,0" />
+                            <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,12,0,0">
+                                <ui:NumberBox x:Name="NumPort" Minimum="1" Maximum="65535" Increment="1" Width="160" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="默认 3389，仅当你在系统层面改过 RDP 监听端口时同步修改" TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,12,0,0">
+                                <CheckBox x:Name="ChkSmartSizing" Style="{StaticResource Input.CheckBox}" Content="缩放适应窗口 (Smart Sizing)" />
+                                <CheckBox x:Name="ChkShortcuts" Style="{StaticResource Input.CheckBox}" Content="系统快捷键发送到分身" Margin="0,8,0,0" />
+                                <CheckBox x:Name="ChkAudio" Style="{StaticResource Input.CheckBox}" Content="音频重定向到本机" Margin="0,8,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 行为设置 -->
+                <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="行为设置" />
+                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="启动、托盘、热键与性能监控" />
+                        <StackPanel Margin="0,14,0,0">
+                            <CheckBox x:Name="ChkAutoConnect" Style="{StaticResource Input.CheckBox}" Content="启动时自动连接分身" />
+                            <CheckBox x:Name="ChkLogoff" Style="{StaticResource Input.CheckBox}" Content="退出时终止子会话" Margin="0,8,0,0" />
+                            <CheckBox x:Name="ChkMinimizeTray" Style="{StaticResource Input.CheckBox}" Content="最小化到系统托盘" Margin="0,8,0,0" />
+                            <CheckBox x:Name="ChkPerformance" Style="{StaticResource Input.CheckBox}" Content="状态栏显示性能监控 (CPU/内存)" Margin="0,8,0,0" />
+                            <CheckBox x:Name="ChkHotkeys" Style="{StaticResource Input.CheckBox}" Content="启用全局热键 (Ctrl+Shift+D 切换连接, Ctrl+Alt+Space 显示窗口)" Margin="0,8,0,0" />
+                            <CheckBox x:Name="ChkGameMouse" Style="{StaticResource Input.CheckBox}" Content="启用游戏鼠标模式（仅标准 RDP，需回放 Agent）" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 分身账户 -->
+                <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="分身账户" />
+                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="标准 RDP 模式下的登录凭据" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身账户用户名" Margin="0,0,16,8" />
+                            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
+                                <TextBox x:Name="TxtUsername" Style="{StaticResource Input.TextBox}" Width="260" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="标准 RDP 模式必填，如 AkiSpaceUser" Margin="0,2,0,0" />
+                            </StackPanel>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身账户密码" />
+                            <StackPanel Grid.Row="1" Grid.Column="1">
+                                <PasswordBox x:Name="PbPassword" Style="{StaticResource Input.PasswordBox}" Width="260" HorizontalAlignment="Left" />
+                                <TextBlock Style="{StaticResource Text.Tertiary}" Text="留空保持现有密码不变；密码使用 DPAPI 加密存储" Margin="0,2,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 自动启动 -->
+                <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="自动启动" />
+                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="连接成功后在分身中启动程序" />
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="连接后自动启动" />
+                            <TextBox x:Name="TxtLaunchPath" Grid.Column="1" Style="{StaticResource Input.TextBox}" VerticalAlignment="Center" />
+                            <Button x:Name="BtnBrowse" Grid.Column="2" Style="{StaticResource Btn.Ghost}"
+                                    Content="浏览..." Margin="8,0,0,0" Click="OnBrowse" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Bottom bar -->
+        <Border Grid.Row="1" Background="{DynamicResource Brush.BgBase}" Padding="24,12">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnCancel" Content="取消" Style="{StaticResource Btn.Ghost}" MinWidth="90"
+                        Click="OnCancel" IsCancel="True" />
+                <Button x:Name="BtnSave" Content="保存" Style="{StaticResource Btn.Primary}" MinWidth="100"
+                        Margin="8,0,0,0" Click="OnSave" IsDefault="True" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</chrome:ChromeWindow>
