@@ -14,11 +14,22 @@ param(
     [string]$Title = "",
     [int]$Frames = 2,
     [int]$IntervalMs = 400,
-    [string]$OutDir = ""
+    [string]$OutDir = "",
+    [ValidateSet("printwindow", "screen")]
+    [string]$Mode = "printwindow"
 )
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
+# Make THIS process PerMonitorV2-aware so GetWindowRect returns physical pixels
+# (a virtualized view would crop PrintWindow output on scaled displays).
+Add-Type @"
+using System.Runtime.InteropServices;
+public static class DpiFix {
+    [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+}
+"@
+[void][DpiFix]::SetProcessDpiAwarenessContext([IntPtr](-4))
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -32,6 +43,7 @@ public static class ProbeWin {
     [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder sb, int max);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
     public static IntPtr FindByPid(uint pid) {
         IntPtr found = IntPtr.Zero;
         EnumWindows(delegate(IntPtr h, IntPtr l) {
@@ -83,7 +95,16 @@ for ($i = 0; $i -lt $Frames; $i++) {
     if ($i -gt 0) { Start-Sleep -Milliseconds $IntervalMs; [ProbeWin]::SetForegroundWindow($hwnd) | Out-Null }
     $bmp = New-Object System.Drawing.Bitmap($w, $h)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.CopyFromScreen($rect.L, $rect.T, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+    if ($Mode -eq "screen") {
+        # Composed screen: shows exactly what a user sees (requires the window on top).
+        $g.CopyFromScreen($rect.L, $rect.T, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+    } else {
+        # PrintWindow + PW_RENDERFULLCONTENT: captures the window's own surface even
+        # when occluded; works for GDI and DirectX-composited content.
+        $hdc = $g.GetHdc()
+        [void][ProbeWin]::PrintWindow($hwnd, $hdc, 2)
+        $g.ReleaseHdc($hdc)
+    }
     $g.Dispose()
     $path = Join-Path $OutDir ("frame{0}.png" -f $i)
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
