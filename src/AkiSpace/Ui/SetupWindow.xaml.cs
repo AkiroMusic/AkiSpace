@@ -17,6 +17,7 @@ using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using MessageBox = System.Windows.MessageBox;
 using Orientation = System.Windows.Controls.Orientation;
 using StackPanel = System.Windows.Controls.StackPanel;
+using SystemColors = System.Windows.SystemColors;
 using TextBlock = System.Windows.Controls.TextBlock;
 using Thickness = System.Windows.Thickness;
 
@@ -77,7 +78,7 @@ public partial class SetupWindow : ChromeWindow
     {
         ChecksList.ItemsSource = new List<CheckRow>
         {
-            new("正在检查环境…", "…", "RDP 监听探测可能需要数秒，请稍候", Brushes.Gray),
+            new("正在检查环境…", "…", "RDP 监听探测可能需要数秒，请稍候", ThemeBrush(WpfThemeHost.TextTertiary)),
         };
     }
 
@@ -85,7 +86,7 @@ public partial class SetupWindow : ChromeWindow
     {
         ChecksList.ItemsSource = new List<CheckRow>
         {
-            new("环境检查", "✗ 错误", $"检查失败：{ex.Message}", FailBrush()),
+            new("环境检查", "✗ 错误", $"检查失败：{ex.Message}", ThemeBrush(WpfThemeHost.Error)),
         };
     }
 
@@ -117,7 +118,7 @@ public partial class SetupWindow : ChromeWindow
     private static Brush FailBrush() => ThemeBrush(WpfThemeHost.Error);
 
     private static Brush ThemeBrush(string key) =>
-        Application.Current.TryFindResource(key) as Brush ?? Brushes.Gray;
+        Application.Current.TryFindResource(key) as Brush ?? Brushes.Transparent;
 
     private async void OnRecheck(object sender, RoutedEventArgs e) => await RunChecksAsync();
 
@@ -272,7 +273,7 @@ public class FixConfirmWindow : ChromeWindow
         ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false;
         Background = Application.Current.TryFindResource(WpfThemeHost.BgBase) as Brush
-                     ?? System.Windows.Media.Brushes.Black;
+                     ?? SystemColors.ControlBrush;
 
         var text = new TextBlock
         {
