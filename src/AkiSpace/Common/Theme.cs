@@ -1,368 +1,228 @@
-using System.Drawing;
-using System.Drawing.Text;
-using System.Reflection;
-using System.Runtime.InteropServices;
+using System.Windows.Media;
+
+// WinForms types are globally imported (UseWindowsForms); alias the WPF types.
+using Color = System.Windows.Media.Color;
 
 namespace AkiSpace.Common;
 
 /// <summary>
-/// Ethereal Glass Design System - Complete Token Definitions
-/// All colors, spacing, radii, shadows, motion, glass, typography tokens.
-/// Zero hardcoded values allowed in UI code - everything via ThemeManager.Current.
+/// Aurora Glass design tokens ("Aki-Design-System.md").
+/// A theme is a self-contained color pack: base trio, text trio, accent trio,
+/// the three-color gradient ramp (the single global light source), the four
+/// aurora glow intensities, and the glass/material tokens. Every effect layer
+/// (aurora backdrop, liquid cards, shadows) reads semantic tokens only, so a
+/// new pack is just another entry in <see cref="Palettes"/>.
 /// </summary>
 public static class ThemeTokens
 {
-    // ============================================================
-    // THEME DEFINITIONS (matching Aki-Design-System.md exactly)
-    // ============================================================
-
     public static readonly Dictionary<string, ThemePalette> Palettes = new()
     {
-        ["dark"] = new ThemePalette
-        {
-            Name = "dark",
-            // Core surfaces
-            BgBase = 0x0E1016u,
-            Surface1 = 0x171A23u,
-            Surface2 = 0x212531u,
-            Border = 0x2E3342u,
-            // Text
-            TextPrimary = 0xF0EEE7u,
-            TextSecondary = 0x8D93A3u,
-            TextTertiary = 0x5B606Eu,
-            // Accents
-            Accent = 0x6C8CFFu,
-            AccentHover = 0x86A3FFu,
-            AccentSecondary = 0xA78BFAu,
-            AccentTertiary = 0xF0A0D8u,
-            // Status
-            Success = 0x4FAE8Au,
-            Error = 0xD9695Fu,
-            Warning = 0xE8A33Du,
-            // Shadows (Dark tint: rgba(4,6,12,...))
-            Shadow1 = new[] { Color.FromArgb(102, 4, 6, 12), Color.FromArgb(46, 4, 6, 12) },
-            Shadow2 = new[] { Color.FromArgb(102, 4, 6, 12), Color.FromArgb(71, 4, 6, 12) },
-            Shadow3 = new[] { Color.FromArgb(115, 4, 6, 12), Color.FromArgb(97, 4, 6, 12) },
-            ShadowAccent = new[] { Color.FromArgb(64, 108, 140, 255), Color.FromArgb(46, 108, 140, 255) },
-            // Glass
-            GlassBg = Color.FromArgb(158, 23, 26, 35),      // 0.62 * 255
-            GlassBgStrong = Color.FromArgb(210, 23, 26, 35), // 0.82 * 255
-            GlassBorder = Color.FromArgb(20, 255, 255, 255), // 0.08 * 255
-            GlassBlur = 20,
-            // Ambient gradients (4 radial glows)
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(36, 108, 140, 255)),  // 0.14 * 255
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(28, 167, 139, 250)),  // 0.11 * 255
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(20, 108, 140, 255)),  // 0.08 * 255
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(18, 240, 160, 216)),  // 0.07 * 255
-            }
-        },
-
-        ["light"] = new ThemePalette
-        {
-            Name = "light",
-            BgBase = 0xF5F5F7u,
-            Surface1 = 0xFFFFFFu,
-            Surface2 = 0xEBEBEDu,
-            Border = 0xD1D1D6u,
-            TextPrimary = 0x1C1C1Eu,
-            TextSecondary = 0x6C6C70u,
-            TextTertiary = 0xAEAEB2u,
-            Accent = 0x5B7FFFu,
-            AccentHover = 0x4A6FE8u,
-            AccentSecondary = 0x8B6FE8u,
-            AccentTertiary = 0xD4893Bu,
-            Success = 0x34C759u,
-            Error = 0xFF3B30u,
-            Warning = 0xE8A33Du,
-            Shadow1 = new[] { Color.FromArgb(15, 20, 20, 30), Color.FromArgb(13, 20, 20, 30) },
-            Shadow2 = new[] { Color.FromArgb(18, 20, 20, 30), Color.FromArgb(23, 20, 20, 30) },
-            Shadow3 = new[] { Color.FromArgb(20, 20, 20, 30), Color.FromArgb(31, 20, 20, 30) },
-            ShadowAccent = new[] { Color.FromArgb(51, 91, 127, 255), Color.FromArgb(41, 91, 127, 255) },
-            GlassBg = Color.FromArgb(174, 255, 255, 255),     // 0.68 * 255
-            GlassBgStrong = Color.FromArgb(225, 255, 255, 255), // 0.88 * 255
-            GlassBorder = Color.FromArgb(20, 28, 28, 30),      // 0.08 * 255
-            GlassBlur = 20,
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(23, 91, 127, 255)),
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(18, 139, 111, 232)),
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(13, 91, 127, 255)),
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(13, 212, 137, 59)),
-            }
-        },
-
-        ["sepia"] = new ThemePalette
-        {
-            Name = "sepia",
-            BgBase = 0xEDE0CCu,
-            Surface1 = 0xF5ECD8u,
-            Surface2 = 0xE3D4BCu,
-            Border = 0xCAB892u,
-            TextPrimary = 0x3A2C1Au,
-            TextSecondary = 0x7A6A4Au,
-            TextTertiary = 0xA89878u,
-            Accent = 0xC9A24Bu,
-            AccentHover = 0xB89130u,
-            AccentSecondary = 0xD4893Bu,
-            AccentTertiary = 0xC45A4Au,
-            Success = 0x5A8A6Au,
-            Error = 0xC45A4Au,
-            Warning = 0xC98A2Au,
-            Shadow1 = new[] { Color.FromArgb(26, 58, 44, 26), Color.FromArgb(20, 58, 44, 26) },
-            Shadow2 = new[] { Color.FromArgb(26, 58, 44, 26), Color.FromArgb(31, 58, 44, 26) },
-            Shadow3 = new[] { Color.FromArgb(31, 58, 44, 26), Color.FromArgb(41, 58, 44, 26) },
-            ShadowAccent = new[] { Color.FromArgb(51, 201, 162, 75), Color.FromArgb(41, 201, 162, 75) },
-            GlassBg = Color.FromArgb(179, 245, 236, 216),    // 0.70 * 255
-            GlassBgStrong = Color.FromArgb(230, 245, 236, 216), // 0.90 * 255
-            GlassBorder = Color.FromArgb(26, 58, 44, 26),     // 0.10 * 255
-            GlassBlur = 20,
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(26, 201, 162, 75)),
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(20, 212, 137, 59)),
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(15, 196, 90, 74)),
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(15, 196, 90, 74)),
-            }
-        },
-
-        ["forest"] = new ThemePalette
-        {
-            Name = "forest",
-            BgBase = 0x283A24u,
-            Surface1 = 0x324830u,
-            Surface2 = 0x3C5438u,
-            Border = 0x4E6446u,
-            TextPrimary = 0xE0EDD8u,
-            TextSecondary = 0x8A9E80u,
-            TextTertiary = 0x5A7050u,
-            Accent = 0x6CC96Cu,
-            AccentHover = 0x7ED87Eu,
-            AccentSecondary = 0x5ABB9Au,
-            AccentTertiary = 0xD9695Fu,
-            Success = 0x4FAE6Au,
-            Error = 0xD9695Fu,
-            Warning = 0xD9A33Du,
-            Shadow1 = new[] { Color.FromArgb(89, 8, 16, 8), Color.FromArgb(51, 8, 16, 8) },
-            Shadow2 = new[] { Color.FromArgb(89, 8, 16, 8), Color.FromArgb(64, 8, 16, 8) },
-            Shadow3 = new[] { Color.FromArgb(102, 8, 16, 8), Color.FromArgb(77, 8, 16, 8) },
-            ShadowAccent = new[] { Color.FromArgb(51, 108, 201, 108), Color.FromArgb(41, 108, 201, 108) },
-            GlassBg = Color.FromArgb(166, 50, 72, 48),     // 0.65 * 255
-            GlassBgStrong = Color.FromArgb(217, 50, 72, 48), // 0.85 * 255
-            GlassBorder = Color.FromArgb(20, 255, 255, 255), // 0.08 * 255
-            GlassBlur = 20,
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(26, 108, 201, 108)),
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(20, 90, 187, 154)),
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(15, 108, 201, 108)),
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(15, 217, 99, 95)),
-            }
-        },
-
-        ["ocean"] = new ThemePalette
-        {
-            Name = "ocean",
-            BgBase = 0x162544u,
-            Surface1 = 0x1E3050u,
-            Surface2 = 0x283C60u,
-            Border = 0x3A4E70u,
-            TextPrimary = 0xE2E8F0u,
-            TextSecondary = 0x8DA0C0u,
-            TextTertiary = 0x5A6E90u,
-            Accent = 0x50C8F0u,
-            AccentHover = 0x6DD4FFu,
-            AccentSecondary = 0x8A96FFu,
-            AccentTertiary = 0xE86A5Fu,
-            Success = 0x4AAF8Au,
-            Error = 0xE86A5Fu,
-            Warning = 0xE8B03Du,
-            Shadow1 = new[] { Color.FromArgb(102, 4, 10, 24), Color.FromArgb(56, 4, 10, 24) },
-            Shadow2 = new[] { Color.FromArgb(102, 4, 10, 24), Color.FromArgb(77, 4, 10, 24) },
-            Shadow3 = new[] { Color.FromArgb(115, 4, 10, 24), Color.FromArgb(92, 4, 10, 24) },
-            ShadowAccent = new[] { Color.FromArgb(51, 80, 200, 240), Color.FromArgb(41, 80, 200, 240) },
-            GlassBg = Color.FromArgb(169, 30, 48, 80),    // 0.66 * 255
-            GlassBgStrong = Color.FromArgb(220, 30, 48, 80), // 0.86 * 255
-            GlassBorder = Color.FromArgb(20, 255, 255, 255), // 0.08 * 255
-            GlassBlur = 20,
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(26, 80, 200, 240)),
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(20, 138, 150, 255)),
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(15, 80, 200, 240)),
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(15, 232, 106, 95)),
-            }
-        },
-
-        ["lavender"] = new ThemePalette
-        {
-            Name = "lavender",
-            BgBase = 0x241E38u,
-            Surface1 = 0x2E2745u,
-            Surface2 = 0x383052u,
-            Border = 0x4A3E6Eu,
-            TextPrimary = 0xECE6F5u,
-            TextSecondary = 0xB0A0D0u,
-            TextTertiary = 0x7A6A9Au,
-            Accent = 0xB89DFFu,
-            AccentHover = 0xCAB0FFu,
-            AccentSecondary = 0xF0A0D8u,
-            AccentTertiary = 0xE86A7Au,
-            Success = 0x6AAF8Au,
-            Error = 0xE86A7Au,
-            Warning = 0xD9A33Du,
-            Shadow1 = new[] { Color.FromArgb(102, 12, 8, 24), Color.FromArgb(56, 12, 8, 24) },
-            Shadow2 = new[] { Color.FromArgb(102, 12, 8, 24), Color.FromArgb(77, 12, 8, 24) },
-            Shadow3 = new[] { Color.FromArgb(115, 12, 8, 24), Color.FromArgb(92, 12, 8, 24) },
-            ShadowAccent = new[] { Color.FromArgb(51, 184, 157, 255), Color.FromArgb(41, 184, 157, 255) },
-            GlassBg = Color.FromArgb(169, 46, 39, 69),    // 0.66 * 255
-            GlassBgStrong = Color.FromArgb(220, 46, 39, 69), // 0.86 * 255
-            GlassBorder = Color.FromArgb(20, 255, 255, 255), // 0.08 * 255
-            GlassBlur = 20,
-            AmbientGlows = new[]
-            {
-                (Rect: new RectangleF(0.12f, 0.08f, 0.38f, 0.44f), Color: Color.FromArgb(26, 184, 157, 255)),
-                (Rect: new RectangleF(0.92f, 0.12f, 0.42f, 0.48f), Color: Color.FromArgb(20, 240, 160, 216)),
-                (Rect: new RectangleF(0.82f, 0.92f, 0.50f, 0.42f), Color: Color.FromArgb(15, 184, 157, 255)),
-                (Rect: new RectangleF(0.06f, 0.88f, 0.36f, 0.40f), Color: Color.FromArgb(15, 232, 106, 122)),
-            }
-        }
+        ["dark"] = DarkPack(),
+        ["amber"] = AmberPack(),
+        ["mint"] = MintPack(),
+        ["pearl"] = PearlPack(),
     };
 
-    // ============================================================
-    // SHARED TOKENS (same across all themes)
-    // ============================================================
-
-    public static class Radius
+    private static ThemePalette DarkPack() => new()
     {
-        public const int Sm = 10;
-        public const int Md = 16;
-        public const int Lg = 24;
-        public const int Full = 999;
-    }
+        Name = "dark",
+        BgBase = Rgb(0x0C, 0x12, 0x20),
+        Surface1 = Rgb(0x15, 0x1C, 0x2C),
+        Surface2 = Rgb(0x1E, 0x28, 0x39),
+        Border = Rgb(0x2B, 0x38, 0x52),
+        TextPrimary = Rgb(0xEE, 0xF2, 0xF8),
+        TextSecondary = Rgb(0x8C, 0x97, 0xAC),
+        TextTertiary = Rgb(0x5A, 0x64, 0x78),
+        Accent = Rgb(0x6D, 0x82, 0xFF),
+        AccentHover = Rgb(0x8A, 0x9B, 0xFF),
+        AccentSecondary = Rgb(0x2C, 0xC5, 0xE0),
+        AccentTertiary = Rgb(0xF0, 0xA0, 0xD8),
+        Success = Rgb(0x4F, 0xAE, 0x8A),
+        Error = Rgb(0xD9, 0x69, 0x5F),
+        Warning = Rgb(0xE8, 0xA3, 0x3D),
+        GradA = Rgb(0x48, 0x60, 0xD9),
+        GradB = Rgb(0x2C, 0xC5, 0xE0),
+        GradC = Rgb(0xC4, 0xA8, 0xF5),
+        Aurora1 = 0x4D, // 30%
+        Aurora2 = 0x38, // 22%
+        Aurora3 = 0x24, // 14%
+        Aurora4 = 0x1A, // 10%
+        GlassBg = Argb(0x9E, 0x15, 0x1C, 0x2C),      // rgba(21, 28, 44, 0.62)
+        GlassBgStrong = Argb(0xD1, 0x15, 0x1C, 0x2C), // rgba(21, 28, 44, 0.82)
+        GlassBorder = Argb(0x14, 0xFF, 0xFF, 0xFF),   // rgba(255, 255, 255, 0.08)
+        GlassBlur = 16,
+        LiquidBg = Argb(0x99, 0x15, 0x1C, 0x2C),      // rgba(21, 28, 44, 0.60)
+        LiquidBorder = Argb(0x17, 0xFF, 0xFF, 0xFF),  // rgba(255, 255, 255, 0.09)
+        Specular = Argb(0x1A, 0xFF, 0xFF, 0xFF),      // rgba(255, 255, 255, 0.10)
+        InnerShade = Argb(0x38, 0x00, 0x00, 0x00),    // rgba(0, 0, 0, 0.22)
+        BezelInnerLine = Argb(0x0B, 0xFF, 0xFF, 0xFF), // rgba(255, 255, 255, 0.045)
+        ShadowTint = Rgb(0x04, 0x06, 0x0C),
+    };
 
-    public static class Space
+    private static ThemePalette AmberPack() => new()
     {
-        public const int S1 = 4;
-        public const int S2 = 8;
-        public const int S3 = 12;
-        public const int S4 = 16;
-        public const int S6 = 24;
-        public const int S8 = 32;
-        public const int S12 = 48;
-    }
+        Name = "amber",
+        BgBase = Rgb(0x1A, 0x12, 0x10),
+        Surface1 = Rgb(0x26, 0x19, 0x16),
+        Surface2 = Rgb(0x32, 0x21, 0x1C),
+        Border = Rgb(0x4A, 0x33, 0x2B),
+        TextPrimary = Rgb(0xF5, 0xED, 0xE4),
+        TextSecondary = Rgb(0xA8, 0x96, 0x88),
+        TextTertiary = Rgb(0x6E, 0x5F, 0x52),
+        Accent = Rgb(0xE5, 0x8A, 0x5A),
+        AccentHover = Rgb(0xF0, 0xA2, 0x76),
+        AccentSecondary = Rgb(0xF2, 0xC2, 0x8F),
+        AccentTertiary = Rgb(0xD9, 0x8E, 0x9C),
+        Success = Rgb(0x58, 0xA8, 0x73),
+        Error = Rgb(0xE0, 0x65, 0x52),
+        Warning = Rgb(0xE8, 0xA3, 0x3D),
+        GradA = Rgb(0xB8, 0x4A, 0x3A),
+        GradB = Rgb(0xE5, 0x8A, 0x5A),
+        GradC = Rgb(0xF2, 0xC2, 0x8F),
+        Aurora1 = 0x42, // 26%
+        Aurora2 = 0x30, // 19%
+        Aurora3 = 0x1F, // 12%
+        Aurora4 = 0x17, // 9%
+        GlassBg = Argb(0x9E, 0x26, 0x19, 0x16),
+        GlassBgStrong = Argb(0xD1, 0x26, 0x19, 0x16),
+        GlassBorder = Argb(0x14, 0xFF, 0xFF, 0xFF),
+        GlassBlur = 16,
+        LiquidBg = Argb(0x99, 0x26, 0x19, 0x16),
+        LiquidBorder = Argb(0x17, 0xFF, 0xFF, 0xFF),
+        Specular = Argb(0x1A, 0xFF, 0xFF, 0xFF),
+        InnerShade = Argb(0x38, 0x00, 0x00, 0x00),
+        BezelInnerLine = Argb(0x0B, 0xFF, 0xFF, 0xFF),
+        ShadowTint = Rgb(0x10, 0x08, 0x05),
+    };
 
-    public static class Motion
+    private static ThemePalette MintPack() => new()
     {
-        // cubic-bezier(0.2, 0.8, 0.2, 1)
-        public static readonly float[] EaseDefault = { 0.2f, 0.8f, 0.2f, 1f };
-        // cubic-bezier(0.32, 0.72, 0, 1) - SPRING
-        public static readonly float[] EaseSpring = { 0.32f, 0.72f, 0f, 1f };
-        // cubic-bezier(0.22, 1, 0.36, 1)
-        public static readonly float[] EaseOutQuint = { 0.22f, 1f, 0.36f, 1f };
+        Name = "mint",
+        BgBase = Rgb(0xE8, 0xF0, 0xE5),
+        Surface1 = Rgb(0xF4, 0xF8, 0xF0),
+        Surface2 = Rgb(0xDC, 0xE7, 0xDA),
+        Border = Rgb(0xC9, 0xD8, 0xC6),
+        TextPrimary = Rgb(0x2F, 0x4A, 0x3A),
+        TextSecondary = Rgb(0x6B, 0x72, 0x68),
+        TextTertiary = Rgb(0x98, 0xA6, 0x9A),
+        Accent = Rgb(0x3D, 0x62, 0x4C),
+        AccentHover = Rgb(0x32, 0x51, 0x3F),
+        AccentSecondary = Rgb(0x8F, 0xA8, 0x9A),
+        AccentTertiary = Rgb(0xD9, 0xA3, 0x8E),
+        Success = Rgb(0x4E, 0x8F, 0x68),
+        Error = Rgb(0xC4, 0x58, 0x4E),
+        Warning = Rgb(0xC0, 0x8A, 0x3D),
+        GradA = Rgb(0x8F, 0xA8, 0x9A),
+        GradB = Rgb(0xA3, 0xC4, 0xA9),
+        GradC = Rgb(0xB5, 0xD7, 0xC3),
+        Aurora1 = 0x26, // 15%
+        Aurora2 = 0x1A, // 10%
+        Aurora3 = 0x0F, // 6%
+        Aurora4 = 0x0A, // 4%
+        GlassBg = Argb(0xAD, 0xF4, 0xF8, 0xF0),      // rgba(244, 248, 240, 0.68)
+        GlassBgStrong = Argb(0xE0, 0xF4, 0xF8, 0xF0), // rgba(244, 248, 240, 0.88)
+        GlassBorder = Argb(0x14, 0x2F, 0x4A, 0x3A),   // rgba(47, 74, 58, 0.08)
+        GlassBlur = 16,
+        LiquidBg = Argb(0x8C, 0xFF, 0xFF, 0xFF),      // rgba(255, 255, 255, 0.55)
+        LiquidBorder = Argb(0xA6, 0xFF, 0xFF, 0xFF),  // rgba(255, 255, 255, 0.65)
+        Specular = Argb(0xD9, 0xFF, 0xFF, 0xFF),      // rgba(255, 255, 255, 0.85)
+        InnerShade = Argb(0x14, 0x2F, 0x3A, 0x32),    // rgba(47, 58, 50, 0.08)
+        BezelInnerLine = Argb(0x0A, 0x00, 0x00, 0x00), // rgba(0, 0, 0, 0.04)
+        ShadowTint = Rgb(0x2F, 0x3A, 0x32),
+        LightTheme = true,
+    };
 
-        public const int DurationHover = 150;
-        public const int DurationPanel = 220;
-        public const int DurationSpring = 320;
-    }
-
-    public static class Typography
+    private static ThemePalette PearlPack() => new()
     {
-        // Font family names (resolved as system font families with fallbacks)
-        public const string Sans = "Plus Jakarta Sans";
-        public const string Display = "Fraunces";
-        public const string Mono = "IBM Plex Mono";
+        Name = "pearl",
+        BgBase = Rgb(0xF0, 0xE8, 0xEE),
+        Surface1 = Rgb(0xFA, 0xF5, 0xF8),
+        Surface2 = Rgb(0xE4, 0xD8, 0xE2),
+        Border = Rgb(0xD4, 0xC4, 0xD2),
+        TextPrimary = Rgb(0x3A, 0x2F, 0x3C),
+        TextSecondary = Rgb(0x8A, 0x7A, 0x8C),
+        TextTertiary = Rgb(0xB4, 0xA6, 0xB6),
+        Accent = Rgb(0xB2, 0x7A, 0x94),
+        AccentHover = Rgb(0x9C, 0x65, 0x80),
+        AccentSecondary = Rgb(0x9B, 0x86, 0xBE),
+        AccentTertiary = Rgb(0x7E, 0x9C, 0xC0),
+        Success = Rgb(0x5A, 0x9E, 0x7A),
+        Error = Rgb(0xC4, 0x58, 0x68),
+        Warning = Rgb(0xC0, 0x8A, 0x3D),
+        GradA = Rgb(0xD9, 0xAF, 0xC0),
+        GradB = Rgb(0xC8, 0xB7, 0xD8),
+        GradC = Rgb(0xAF, 0xC5, 0xDE),
+        Aurora1 = 0x29, // 16%
+        Aurora2 = 0x1C, // 11%
+        Aurora3 = 0x12, // 7%
+        Aurora4 = 0x0D, // 5%
+        GlassBg = Argb(0xAD, 0xFA, 0xF5, 0xF8),
+        GlassBgStrong = Argb(0xE0, 0xFA, 0xF5, 0xF8),
+        GlassBorder = Argb(0x14, 0x3A, 0x2A, 0x34),   // rgba(58, 42, 52, 0.08)
+        GlassBlur = 16,
+        LiquidBg = Argb(0x8C, 0xFF, 0xFF, 0xFF),
+        LiquidBorder = Argb(0xA6, 0xFF, 0xFF, 0xFF),
+        Specular = Argb(0xD9, 0xFF, 0xFF, 0xFF),
+        InnerShade = Argb(0x14, 0x3A, 0x2A, 0x34),    // rgba(58, 42, 52, 0.08)
+        BezelInnerLine = Argb(0x0A, 0x00, 0x00, 0x00),
+        ShadowTint = Rgb(0x3A, 0x2A, 0x34),
+        LightTheme = true,
+    };
 
-        // Fallback stacks
-        public static readonly string[] SansFallback = { "Microsoft YaHei UI", "Segoe UI", "system-ui", "sans-serif" };
-        public static readonly string[] DisplayFallback = { "Georgia", "serif" };
-        public static readonly string[] MonoFallback = { "Consolas", "Courier New", "monospace" };
-
-        // Font sizes (px)
-        public const float CardTitle = 20f;      // h2, Fraunces 600
-        public const float CardSubtitle = 12f;   // tertiary, 400
-        public const float MainParam = 20f;      // BPM, Mono 600
-        public const float LargeValue = 14f;     // panel title, Mono 500-600
-        public const float Body = 13f;           // regular UI, Sans 400-500
-        public const float Label = 12f;          // secondary/tertiary
-        public const float MicroLabel = 10f;     // sidebar, badge, letter-spacing 0.02em
-        public const float Footer = 11f;         // tertiary
-    }
-
-    // Noise overlay opacity (0.035)
-    public const float NoiseOpacity = 0.035f;
+    private static Color Rgb(byte r, byte g, byte b) => Color.FromRgb(r, g, b);
+    private static Color Argb(byte a, byte r, byte g, byte b) => Color.FromArgb(a, r, g, b);
 }
 
-/// <summary>
-/// Single theme palette with all color values.
-/// </summary>
+/// <summary>One Aurora Glass color pack. Names are the semantic tokens; values are the pack.</summary>
 public sealed class ThemePalette
 {
     public string Name { get; set; } = "dark";
+    public bool LightTheme { get; set; }
 
-    // Core
-    public uint BgBase { get; set; }
-    public uint Surface1 { get; set; }
-    public uint Surface2 { get; set; }
-    public uint Border { get; set; }
+    // Base trio + border
+    public Color BgBase { get; set; }
+    public Color Surface1 { get; set; }
+    public Color Surface2 { get; set; }
+    public Color Border { get; set; }
 
-    // Text
-    public uint TextPrimary { get; set; }
-    public uint TextSecondary { get; set; }
-    public uint TextTertiary { get; set; }
+    // Text trio
+    public Color TextPrimary { get; set; }
+    public Color TextSecondary { get; set; }
+    public Color TextTertiary { get; set; }
 
-    // Accents
-    public uint Accent { get; set; }
-    public uint AccentHover { get; set; }
-    public uint AccentSecondary { get; set; }
-    public uint AccentTertiary { get; set; }
+    // Accent trio + status
+    public Color Accent { get; set; }
+    public Color AccentHover { get; set; }
+    public Color AccentSecondary { get; set; }
+    public Color AccentTertiary { get; set; }
+    public Color Success { get; set; }
+    public Color Error { get; set; }
+    public Color Warning { get; set; }
 
-    // Status
-    public uint Success { get; set; }
-    public uint Error { get; set; }
-    public uint Warning { get; set; }
+    // Gradient ramp — the global light source: A (deep/structure) → B (mid/atmosphere) → C (light/highlight)
+    public Color GradA { get; set; }
+    public Color GradB { get; set; }
+    public Color GradC { get; set; }
 
-    // Shadows (dual-layer: [tight, diffuse])
-    public Color[] Shadow1 { get; set; } = Array.Empty<Color>();
-    public Color[] Shadow2 { get; set; } = Array.Empty<Color>();
-    public Color[] Shadow3 { get; set; } = Array.Empty<Color>();
-    public Color[] ShadowAccent { get; set; } = Array.Empty<Color>();
+    // Aurora glow intensities for the four background glows (light packs run lower)
+    public byte Aurora1 { get; set; }
+    public byte Aurora2 { get; set; }
+    public byte Aurora3 { get; set; }
+    public byte Aurora4 { get; set; }
 
-    // Glass
+    // Frosted (structural glass) tokens
     public Color GlassBg { get; set; }
     public Color GlassBgStrong { get; set; }
     public Color GlassBorder { get; set; }
-    public int GlassBlur { get; set; } = 20;
+    public int GlassBlur { get; set; } = 16;
 
-    // Ambient background glows
-    public (RectangleF Rect, Color Color)[] AmbientGlows { get; set; } = Array.Empty<(RectangleF, Color)>();
+    // Liquid (content glass, Lite — no backdrop) tokens; specular and inner shade always travel in pairs
+    public Color LiquidBg { get; set; }
+    public Color LiquidBorder { get; set; }
+    public Color Specular { get; set; }
+    public Color InnerShade { get; set; }
+    public Color BezelInnerLine { get; set; }
 
-    // Helpers
-    public Color GetColor(uint hex) => Color.FromArgb(unchecked((int)(0xFF000000u | hex)));
-    public Color GetColor(uint hex, byte alpha) => Color.FromArgb(alpha, (int)((hex >> 16) & 0xFF), (int)((hex >> 8) & 0xFF), (int)(hex & 0xFF));
-}
-
-/// <summary>
-/// Color token keys for semantic access.
-/// </summary>
-public static class ColorToken
-{
-    public const string BgBase = "bg-base";
-    public const string Surface1 = "surface-1";
-    public const string Surface2 = "surface-2";
-    public const string Border = "border";
-    public const string TextPrimary = "text-primary";
-    public const string TextSecondary = "text-secondary";
-    public const string TextTertiary = "text-tertiary";
-    public const string Accent = "accent";
-    public const string AccentHover = "accent-hover";
-    public const string AccentSecondary = "accent-secondary";
-    public const string AccentTertiary = "accent-tertiary";
-    public const string Success = "success";
-    public const string Error = "error";
-    public const string Warning = "warning";
-    public const string GlassBg = "glass-bg";
-    public const string GlassBgStrong = "glass-bg-strong";
-    public const string GlassBorder = "glass-border";
+    // Tinted shadow color (never pure black)
+    public Color ShadowTint { get; set; }
 }

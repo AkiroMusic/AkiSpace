@@ -2,88 +2,97 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:AkiSpace.Ui"
+        xmlns:ui="clr-namespace:AkiSpace.Ui.Controls"
         Title="环境检查 / 修复 — 桌面分身前置条件"
         Width="820" Height="720" MinWidth="720" MinHeight="560"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource Brush.BgBase}">
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+        <ui:AuroraBackdrop />
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="24">
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Background="Transparent">
+                <StackPanel Margin="24">
 
-                <!-- 检查卡片 -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource Text.CardTitle}" Text="环境检查" />
-                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="桌面分身运行前置条件检测" />
-                        <ItemsControl x:Name="ChecksList" Margin="0,14,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="260" />
-                                            <ColumnDefinition Width="90" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Style="{StaticResource Text.Base}"
-                                                   Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Grid.Column="1" FontSize="12" Text="{Binding Status}"
-                                                   Foreground="{Binding StatusBrush}" />
-                                        <TextBlock Grid.Column="2" Style="{StaticResource Text.Secondary}"
-                                                   Text="{Binding Detail}" TextTrimming="CharacterEllipsis"
-                                                   ToolTip="{Binding Detail}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+                    <!-- 检查卡片 -->
+                    <ui:GlassCard Margin="0,0,0,24">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="环境检查" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="桌面分身运行前置条件检测"
+                                       Margin="0,2,0,0" />
+                            <ItemsControl x:Name="ChecksList" Margin="0,16,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="260" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Style="{StaticResource Text.Base}"
+                                                       Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" FontSize="12" Text="{Binding Status}"
+                                                       Foreground="{Binding StatusBrush}" />
+                                            <TextBlock Grid.Column="2" Style="{StaticResource Text.Secondary}"
+                                                       Text="{Binding Detail}" TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Detail}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ui:GlassCard>
 
-                <!-- 家庭版指南卡片 -->
-                <Border x:Name="HomeGuideCard" Style="{StaticResource Card}" Margin="0,16,0,0"
-                        Visibility="Collapsed"
-                        BorderBrush="{DynamicResource Brush.Warning}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource Text.CardTitle}" Foreground="{DynamicResource Brush.Warning}"
-                                   Text="⚠ 家庭版需要安装 RDP Wrapper" />
-                        <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="Windows Home 缺少 RDP 主机功能，需第三方解锁层" />
-                        <TextBlock Style="{StaticResource Text.Secondary}" Margin="0,12,0,0" TextWrapping="Wrap"
-                                   Text="Windows 家庭版不提供 RDP 主机，桌面分身功能需要 RDP Wrapper 第三方解锁层。&#x0A;安装步骤：① 下载任一社区维护的 RDP Wrapper → ② 解压到 C:\Program Files\RDP Wrapper\ →&#x0A;③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。&#x0A;AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。" />
-                        <TextBlock x:Name="LblTermsrvVersion" FontFamily="{StaticResource Font.Mono}"
-                                   FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}"
-                                   Margin="0,12,0,0" TextWrapping="Wrap" />
-                        <WrapPanel Margin="0,8,0,0">
-                            <Button Style="{StaticResource Btn.Ghost}" Content="① 打开 sergiye/rdpWrapper (C# 推荐)"
-                                    Click="OnOpenSergiye" Margin="0,0,8,8" />
-                            <Button Style="{StaticResource Btn.Ghost}" Content="② 打开 sebaxakerhtc/rdpwrap (Delphi fork)"
-                                    Click="OnOpenSebaxakerhtc" Margin="0,0,8,8" />
-                            <Button Style="{StaticResource Btn.Ghost}" Content="③ 复制版本号（用于搜索 rdpwrap.ini）"
-                                    Click="OnCopyVersion" Margin="0,0,8,8" />
-                            <Button Style="{StaticResource Btn.Ghost}" Content="④ 复制诊断信息（用于 GitHub 反馈）"
-                                    Click="OnCopyDiagnostics" Margin="0,0,8,8" />
-                        </WrapPanel>
-                        <Button Style="{StaticResource Btn.Primary}" Content="我已安装 RDP Wrapper → 重新检查"
-                                Click="OnRecheck" Margin="0,8,0,0" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </Border>
+                    <!-- 家庭版指南卡片（warning-tinted border） -->
+                    <ui:GlassCard x:Name="HomeGuideCard" Margin="0,0,0,24"
+                                  BorderBrush="{DynamicResource Brush.Warning}"
+                                  Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Foreground="{DynamicResource Brush.Warning}"
+                                       Text="⚠ 家庭版需要安装 RDP Wrapper" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="Windows Home 缺少 RDP 主机功能，需第三方解锁层"
+                                       Margin="0,2,0,0" />
+                            <Border Height="1" Background="{DynamicResource Brush.Hairline}" Margin="0,16,0,0" />
+                            <TextBlock Style="{StaticResource Text.Secondary}" Margin="0,14,0,0" TextWrapping="Wrap"
+                                       Text="Windows 家庭版不提供 RDP 主机，桌面分身功能需要 RDP Wrapper 第三方解锁层。&#x0A;安装步骤：① 下载任一社区维护的 RDP Wrapper → ② 解压到 C:\Program Files\RDP Wrapper\ →&#x0A;③ 以管理员运行 rdpWrapper.exe -install → ④ 确认 rdpwrap.ini 含本机 termsrv.dll 版本段。&#x0A;AkiSpace 不会自动下载运行第三方二进制，请按需从可信来源获取。" />
+                            <TextBlock x:Name="LblTermsrvVersion" FontFamily="{StaticResource Font.Mono}"
+                                       FontSize="12" FontWeight="Bold" Foreground="{DynamicResource Brush.Accent}"
+                                       Margin="0,14,0,0" TextWrapping="Wrap" />
+                            <WrapPanel Margin="0,10,0,0">
+                                <Button Style="{StaticResource Btn.Ghost}" Content="① 打开 sergiye/rdpWrapper (C# 推荐)"
+                                        Click="OnOpenSergiye" Margin="0,0,10,10" />
+                                <Button Style="{StaticResource Btn.Ghost}" Content="② 打开 sebaxakerhtc/rdpwrap (Delphi fork)"
+                                        Click="OnOpenSebaxakerhtc" Margin="0,0,10,10" />
+                                <Button Style="{StaticResource Btn.Ghost}" Content="③ 复制版本号（用于搜索 rdpwrap.ini）"
+                                        Click="OnCopyVersion" Margin="0,0,10,10" />
+                                <Button Style="{StaticResource Btn.Ghost}" Content="④ 复制诊断信息（用于 GitHub 反馈）"
+                                        Click="OnCopyDiagnostics" Margin="0,0,10,10" />
+                            </WrapPanel>
+                            <Button Style="{StaticResource Btn.Primary}" Content="我已安装 RDP Wrapper → 重新检查"
+                                    Click="OnRecheck" Margin="0,8,0,0" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </ui:GlassCard>
 
-            </StackPanel>
-        </ScrollViewer>
+                </StackPanel>
+            </ScrollViewer>
 
-        <!-- Bottom bar -->
-        <Border Grid.Row="1" Background="{DynamicResource Brush.BgBase}" Padding="24,12">
-            <DockPanel LastChildFill="False">
-                <Button x:Name="BtnClose" DockPanel.Dock="Right" Content="关闭" Style="{StaticResource Btn.Ghost}"
-                        MinWidth="90" Click="OnClose" IsCancel="True" />
-                <Button x:Name="BtnFix" DockPanel.Dock="Right" Content="一键修复" Style="{StaticResource Btn.Primary}"
-                        MinWidth="110" Margin="8,0,0,0" Click="OnFix" />
-                <Button x:Name="BtnCheck" DockPanel.Dock="Right" Content="重新检查" Style="{StaticResource Btn.Ghost}"
-                        MinWidth="110" Margin="8,0,0,0" Click="OnRecheck" />
-            </DockPanel>
-        </Border>
+            <!-- Bottom bar (structural glass bar) -->
+            <Border Grid.Row="1" Background="{DynamicResource Brush.GlassBg}"
+                    BorderBrush="{DynamicResource Brush.GlassBorder}" BorderThickness="0,1,0,0"
+                    Padding="24,12">
+                <DockPanel LastChildFill="False">
+                    <Button x:Name="BtnClose" DockPanel.Dock="Right" Content="关闭" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="90" Click="OnClose" IsCancel="True" />
+                    <Button x:Name="BtnFix" DockPanel.Dock="Right" Content="一键修复" Style="{StaticResource Btn.Primary}"
+                            MinWidth="110" Margin="10,0,0,0" Click="OnFix" />
+                    <Button x:Name="BtnCheck" DockPanel.Dock="Right" Content="重新检查" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="110" Margin="10,0,0,0" Click="OnRecheck" />
+                </DockPanel>
+            </Border>
+        </Grid>
     </Grid>
 </chrome:ChromeWindow>

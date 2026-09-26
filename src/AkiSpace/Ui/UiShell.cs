@@ -111,6 +111,17 @@ internal sealed class UiShell
         _hotkeys.Dispose();
         _tray.Dispose();
         _logger.LogInformation("Shell shut down");
+
+        // The MSTSC ActiveX can block window destruction while a connect is still
+        // unwinding, leaving the dispatcher unable to finish shutdown. All durable
+        // cleanup above has already run, so enforce termination with a watchdog;
+        // on the healthy path the process exits normally before it fires.
+        System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(3000);
+            Environment.Exit(0);
+        });
     }
 
     private void ShowMainWindow()
