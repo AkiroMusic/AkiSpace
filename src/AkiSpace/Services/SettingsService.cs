@@ -28,8 +28,8 @@ public sealed class AppSettings
     /// <summary>Scale the RDP view to fit the window (vs 1:1).</summary>
     public bool SmartSizing { get; set; } = true;
 
-    /// <summary>Route system shortcuts (Alt+Tab, Win key) to the remote session.</summary>
-    public bool SendSystemShortcutsToRemote { get; set; } = true;
+    /// <summary>Route system shortcuts (Alt+Tab, Win key) to the remote session. Default off: Win 透传会让远端 Win 键卡下，所有按键变 Win+X。</summary>
+    public bool SendSystemShortcutsToRemote { get; set; } = false;
 
     /// <summary>RDP port (read from registry by default, overridable here).</summary>
     public int RdpPort { get; set; } = 3389;
