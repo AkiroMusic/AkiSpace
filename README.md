@@ -6,22 +6,27 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **Standard RDP**: Uses a separate local account (e.g., AkiSpaceUser) over 127.0.0.1 to establish a second RDP interactive session
 - **Child Session**: Uses the current account to create a Windows child session, identical to BetterGI's desktop clone technique
 
+![AkiSpace main window — Aurora Glass dark theme](docs/screenshot-main.png)
+
 ---
 
 ## Features
 
 - **One-click Clone**: Click "Connect" or press `Ctrl+Shift+D` to instantly connect; embedded window shows the clone desktop live
+- **One-click Clone Screenshot**: Toolbar button, tray item or `Ctrl+Shift+S` captures the clone desktop straight to the host clipboard (Bitmap + PNG formats; paste into Paint, Office or chat apps)
+- **Aurora Glass UI**: WPF frontend with four switchable color packs — Aurora Dusk & Amber Afterglow (dark), Mint Fresh & Pearl Blush (light) — live preview in Settings; animated aurora backdrop, liquid-glass cards, smooth scrolling, status dots and toast feedback
 - **Dual Connection Modes**: Switch between "Standard RDP" (separate account) and "Child Session" (BetterGI-style, same user) in Settings
-- **System Tray**: Minimize to tray; double-click tray icon to restore; right-click menu for connect/disconnect/quit
+- **System Tray**: Minimize to tray; double-click tray icon to restore; right-click menu for connect/screenshot/show/quit
 - **Global Hotkeys**:
   - `Ctrl+Shift+D`: Toggle connect/disconnect
   - `Ctrl+Alt+Space`: Show/restore main window
+  - `Ctrl+Shift+S`: Capture clone screen to clipboard
 - **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. Driven by the paired replay agent (`--agent`), which AkiSpace auto-launches inside the clone session on connect (implemented in v0.1.6). **Hidden in child-session mode.**
 - **Alt Release**: Hold Alt to temporarily release cursor back to host desktop
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
 - **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc.
 - **Performance Monitor**: Status bar shows real-time CPU & memory usage
-- **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, smart scaling, hotkeys, etc.)
+- **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, color pack, smart scaling, hotkeys, etc.)
 
 ---
 
@@ -108,7 +113,7 @@ Back in AkiSpace → "Environment Check/Repair" → "Recheck". All should show �
 
 AkiSpace's "One-Click Fix" installs a **single** inbound firewall rule. Windows Firewall never inspects loopback (`127.0.0.1`/`::1`) traffic — it is permitted at a higher WFP sub-layer — so an "allow 127.0.0.1" rule would be a no-op. Instead the fix adds one **block** rule on the RDP port (3389 or the configured port) with `remoteip=any`, which stops every genuine remote client while loopback RDP keeps working via the firewall's loopback bypass. Block rules also take precedence over allow rules, so this reliably closes the port remotely. It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so it can't shadow the block. Both Standard RDP and Child Session use this port.
 
-Other security defaults (current release v0.1.6; hardening landed earlier in v0.1.3):
+Other security defaults (hardening landed v0.1.3–v0.1.6):
 - **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. There is no built-in default password: the first Standard-RDP connect prompts for it and it is persisted DPAPI-encrypted.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
@@ -194,22 +199,27 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **标准 RDP**：用独立本地账户（如 AkiSpaceUser）通过 127.0.0.1 建立第二个 RDP 交互会话
 - **子会话（ChildSession）**：用当前账户创建 Windows 子会话，与 BetterGI 桌面分身效果相同
 
+![AkiSpace 主窗口 — Aurora Glass 深色主题](docs/screenshot-main.png)
+
 ---
 
 ## 功能
 
 - **一键连接分身**：点击「连接」或按 `Ctrl+Shift+D` 立即连接，内嵌窗口实时显示分身桌面
+- **一键截屏分身**：工具栏按钮、托盘菜单或 `Ctrl+Shift+S` 把分身桌面直接截取到主系统剪贴板（同时含 Bitmap 与 PNG 两种格式，可粘贴到画图、Office 或聊天工具）
+- **Aurora Glass 界面**：WPF 前端，四套可切换配色包——极光暮色 / 琥珀霞光（深色）、薄荷清新 / 珍珠雾粉（浅色），设置内即时预览；极光动效背景、液态玻璃卡片、平滑滚动、状态指示点与 Toast 反馈
 - **双连接模式**：支持「标准 RDP」（独立账户）和「子会话」（BetterGI 同款，当前账户）两种模式，在设置中切换
-- **系统托盘**：最小化到系统托盘，双击托盘图标快速恢复，右键菜单支持连接/断开/退出
+- **系统托盘**：最小化到系统托盘，双击托盘图标快速恢复，右键菜单支持连接/截屏/显示/退出
 - **全局热键**：
   - `Ctrl+Shift+D`：切换连接/断开分身
   - `Ctrl+Alt+Space`：显示/恢复主窗口
+  - `Ctrl+Shift+S`：截取分身画面到剪贴板
 - **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。由配对的回放 Agent（`--agent`）驱动，AkiSpace 在连接时会自动在分身会话中启动该 Agent（已于 v0.1.6 实现）。**子会话模式下隐藏该按钮。**
 - **Alt 键释放**：按住 Alt 临时释放光标，回到主桌面操作
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
 - **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件
 - **性能监控**：状态栏实时显示 CPU 和内存使用率
-- **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、智能缩放、热键等）
+- **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、配色包、智能缩放、热键等）
 
 ---
 
@@ -296,7 +306,7 @@ Restart-Service TermService -Force
 
 AkiSpace 的「一键修复」只下发**一条**防火墙规则。Windows 防火墙从不检查回环（`127.0.0.1`/`::1`）流量——它在更高的 WFP 子层被放行——所以「允许 127.0.0.1」这类规则其实是空操作。取而代之，修复会在 RDP 端口（3389 或「设置」中配置的端口）上添加一条 `remoteip=any` 的入站**阻断**规则：它拦下所有真正来自远端的连接，而回环 RDP 凭借防火墙的回环旁路照常工作。阻断规则的优先级高于允许规则，因此能可靠地对远端关闭该端口。如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），以免它干扰阻断效果。标准 RDP 模式和子会话模式都通过此端口连接。
 
-v0.1.6（当前版本；下列加固自 v0.1.3 起引入）的其他安全默认：
+v0.1.6 起的其他安全默认（下列加固自 v0.1.3 起引入）：
 - **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。不再内置默认密码：首次「连接」标准 RDP 时会弹窗询问并加密保存。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。

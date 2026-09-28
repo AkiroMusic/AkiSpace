@@ -30,6 +30,10 @@ public partial class MainWindow : Window
         _controller = controller;
         BindController();
 
+        TxtVersion.Text = typeof(MainWindow).Assembly.GetName().Version is { } version
+            ? $"v{version.Major}.{version.Minor}.{version.Build}"
+            : string.Empty;
+
         SourceInitialized += (_, _) =>
         {
             ApplyDarkTitleBar();
@@ -41,8 +45,8 @@ public partial class MainWindow : Window
     private void BindController()
     {
         _controller.ConnectStateChanged += ApplyConnectState;
-        _controller.ChildSessionStatusChanged += text => Dispatcher.Invoke(() => LblChildSession.Text = text);
-        _controller.WrapperStatusChanged += text => Dispatcher.Invoke(() => LblWrapper.Text = text);
+        _controller.ChildSessionStatusChanged += text => Dispatcher.Invoke(() => SetStatus(LblChildSession, DotChildSession, text));
+        _controller.WrapperStatusChanged += text => Dispatcher.Invoke(() => SetStatus(LblWrapper, DotWrapper, text));
         _controller.PerformanceStatusChanged += text => Dispatcher.Invoke(() => LblPerformance.Text = text);
         _controller.RdpHostChanged += OnRdpHostChanged;
         _controller.FullScreenRequested += () => Dispatcher.Invoke(EnterFullScreen);
@@ -56,9 +60,9 @@ public partial class MainWindow : Window
         BtnTerminate.IsEnabled = s.TerminateEnabled;
         BtnGameMouse.Visibility = s.GameMouseVisible ? Visibility.Visible : Visibility.Collapsed;
         BtnGameMouse.IsEnabled = s.GameMouseEnabled;
-        BtnGameMouse.Content = s.GameMouseText;
+        GameMouseText.Text = s.GameMouseText;
         BtnLaunch.IsEnabled = s.LaunchEnabled;
-        LblConnection.Text = s.ConnectionStatusText;
+        SetStatus(LblConnection, DotConnection, s.ConnectionStatusText);
     }
 
     private void OnRdpHostChanged(RdpActiveXHost? host)
@@ -69,6 +73,8 @@ public partial class MainWindow : Window
             ViewerArea.Children.Remove(_formsHost);
             _formsHost = null;
         }
+        BtnScreenshot.IsEnabled = host is not null; // capture needs a live clone session
+        EmptyState.Visibility = host is null ? Visibility.Visible : Visibility.Collapsed;
         if (host is null) return;
 
         // WindowsFormsHost.EnableWindowsFormsInterop() has already run in the shell.
@@ -97,6 +103,7 @@ public partial class MainWindow : Window
     private void OnTerminate(object sender, RoutedEventArgs e) => _controller.TerminateChildSession();
     private void OnGameMouse(object sender, RoutedEventArgs e) => _controller.ToggleGameMouse();
     private void OnLaunch(object sender, RoutedEventArgs e) => _controller.LaunchProgramInChildSession();
+    private void OnScreenshot(object sender, RoutedEventArgs e) => CaptureChildScreenToClipboard();
     private void OnSetup(object sender, RoutedEventArgs e)
     {
         var setup = new SetupWindow(
@@ -130,6 +137,80 @@ public partial class MainWindow : Window
         {
             AppShellServices.LoggerFor<MainWindow>().LogWarning(ex, "Failed to open repository link");
         }
+    }
+
+    // ---------------------------------------------------------------- clone screenshot
+
+    /// <summary>
+    /// One-click clone-screen capture to the HOST clipboard (toolbar button, tray
+    /// item or Ctrl+Shift+S). View-side only: PrintWindow renders the RDP host
+    /// surface; a failure reports status and never touches the session.
+    /// </summary>
+    public void CaptureChildScreenToClipboard()
+    {
+        var host = _formsHost?.Child as RdpActiveXHost;
+        var hwnd = host is { IsHandleCreated: true } ? host.Handle : IntPtr.Zero;
+        if (hwnd == IntPtr.Zero
+            || !ChildScreenCapture.TryCapture(hwnd, out var bitmap)
+            || bitmap is null
+            || !ChildScreenCapture.CopyToClipboard(bitmap))
+        {
+            _controller.SetStatusText("截屏: 未连接分身或复制失败");
+            ShowToast("截屏失败 — 分身未连接", success: false);
+            return;
+        }
+        _controller.SetStatusText("已截取分身画面 → 剪贴板");
+        ShowToast("分身画面已复制到剪贴板");
+    }
+
+    /// <summary>Sets a status label and its lead dot in one call (dot color follows the text).</summary>
+    private static void SetStatus(System.Windows.Controls.TextBlock label, System.Windows.Shapes.Ellipse dot, string text)
+    {
+        label.Text = text;
+        dot.Fill = StatusBrushFor(text);
+    }
+
+    /// <summary>Dot color heuristic over the controller's status strings: running/connected → success,
+    /// in-flight → warning, off → tertiary.</summary>
+    private static System.Windows.Media.Brush StatusBrushFor(string text)
+    {
+        if (text.Contains("已连接") || text.Contains("活动") || text.Contains("已安装"))
+        {
+            return ThemeBrush("Brush.Success");
+        }
+        if (text.Contains("正在") || text.Contains("检测中"))
+        {
+            return ThemeBrush("Brush.Warning");
+        }
+        return ThemeBrush("Brush.TextTertiary");
+    }
+
+    private static System.Windows.Media.Brush ThemeBrush(string key) =>
+        System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush
+        ?? System.Windows.Media.Brushes.Transparent;
+
+    private System.Windows.Threading.DispatcherTimer? _toastTimer;
+
+    /// <summary>Shows a fading glass toast above the status row (capture feedback).</summary>
+    private void ShowToast(string message, bool success = true)
+    {
+        ToastText.Text = message;
+        ToastIcon.Stroke = ThemeBrush(success ? "Brush.Success" : "Brush.Error");
+        ToastPill.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(
+            ToastPill.Opacity, 1, TimeSpan.FromMilliseconds(150)));
+
+        if (_toastTimer is null)
+        {
+            _toastTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2.2) };
+            _toastTimer.Tick += (_, _) =>
+            {
+                _toastTimer.Stop();
+                ToastPill.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(
+                    ToastPill.Opacity, 0, TimeSpan.FromMilliseconds(350)));
+            };
+        }
+        _toastTimer.Stop();
+        _toastTimer.Start();
     }
 
     // ---------------------------------------------------------------- window chrome / session end

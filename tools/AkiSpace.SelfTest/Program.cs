@@ -207,7 +207,15 @@ void Check(string name, bool pass, string? detail = null)
         uiThread.Join(TimeSpan.FromSeconds(20));
         if (uiError != null)
         {
-            Check("SetupWindow UI smoke test", false, uiError.Message);
+            // XamlParseException wraps the real cause several layers deep — unwrap.
+            var detail = uiError.Message;
+            var inner = uiError.InnerException;
+            while (inner is not null)
+            {
+                detail += $" ==> {inner.Message}";
+                inner = inner.InnerException;
+            }
+            Check("SetupWindow UI smoke test", false, detail);
         }
     } // end else (interactive)
 }

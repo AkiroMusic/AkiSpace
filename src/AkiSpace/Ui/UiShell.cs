@@ -58,11 +58,13 @@ internal sealed class UiShell
         _tray = new TrayIconService(loggerFactory.CreateLogger<TrayIconService>(), ExtractExeIcon());
         _tray.ConnectToggleRequested += () => _controller.ToggleConnect();
         _tray.ShowWindowRequested += ShowMainWindow;
+        _tray.ScreenshotRequested += CaptureChildScreenToClipboard;
         _tray.ExitRequested += ExitApplication;
 
         _hotkeys = new HotkeyManager(loggerFactory.CreateLogger<HotkeyManager>(), _settingsService);
         _hotkeys.ToggleConnectRequested += () => _controller.ToggleConnect();
         _hotkeys.ShowWindowRequested += ShowMainWindow;
+        _hotkeys.ScreenshotRequested += CaptureChildScreenToClipboard;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statusTimer.Tick += (_, _) => _controller.RefreshStatus();
@@ -130,6 +132,28 @@ internal sealed class UiShell
         Main.WindowState = WindowState.Normal;
         _tray.SetVisible(false);
         Main.Activate();
+    }
+
+    /// <summary>
+    /// Every capture entry (toolbar button, tray item, Ctrl+Shift+S) lands here.
+    /// A minimized or hidden window renders nothing, so restore it first; failures
+    /// are logged, never thrown — a capture must never take the session down.
+    /// </summary>
+    private void CaptureChildScreenToClipboard()
+    {
+        try
+        {
+            if (Main.WindowState == WindowState.Minimized)
+            {
+                Main.Show();
+                Main.WindowState = WindowState.Normal;
+            }
+            Main.CaptureChildScreenToClipboard();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Capture child screen to clipboard failed");
+        }
     }
 
     private void ExitApplication()

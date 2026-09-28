@@ -15,7 +15,8 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Background="Transparent">
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Background="Transparent"
+                          ui:SmoothScroll.IsEnabled="True">
                 <StackPanel Margin="24">
 
                     <!-- 检查卡片 -->

@@ -14,7 +14,8 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Background="Transparent">
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Background="Transparent"
+                          ui:SmoothScroll.IsEnabled="True">
                 <StackPanel Margin="24">
 
                     <!-- 连接配置 -->
@@ -121,6 +122,27 @@
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="留空保持现有密码不变；密码使用 DPAPI 加密存储" Margin="0,3,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Grid>
+                        </StackPanel>
+                    </ui:GlassCard>
+
+                    <!-- 外观 -->
+                    <ui:GlassCard Margin="0,0,0,24">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="外观" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="Aurora Glass 配色包 — 两套深色、两套浅色，切换即时预览"
+                                       Margin="0,2,0,0" />
+                            <WrapPanel Margin="0,16,0,0">
+                                <RadioButton x:Name="RdoThemeDark" Style="{StaticResource Input.Radio}"
+                                             Content="极光暮色 (深)" Tag="dark" GroupName="ThemePack" Checked="OnThemePreview" />
+                                <RadioButton x:Name="RdoThemeAmber" Style="{StaticResource Input.Radio}"
+                                             Content="琥珀霞光 (深)" Tag="amber" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
+                                <RadioButton x:Name="RdoThemeMint" Style="{StaticResource Input.Radio}"
+                                             Content="薄荷清新 (浅)" Tag="mint" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
+                                <RadioButton x:Name="RdoThemePearl" Style="{StaticResource Input.Radio}"
+                                             Content="珍珠雾粉 (浅)" Tag="pearl" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
+                            </WrapPanel>
+                            <TextBlock Style="{StaticResource Text.Tertiary}" Margin="0,8,0,0"
+                                       Text="取消关闭窗口时恢复原配色；保存后写入设置" />
                         </StackPanel>
                     </ui:GlassCard>
 
