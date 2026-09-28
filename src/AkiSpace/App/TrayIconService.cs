@@ -15,9 +15,11 @@ public sealed class TrayIconService : IDisposable
     private readonly ILogger<TrayIconService> _logger;
     private readonly ContextMenuStrip _trayMenu;
     private readonly NotifyIcon _trayIcon;
+    private readonly ToolStripMenuItem _screenshotItem;
     private bool _disposed;
 
     public event Action? ConnectToggleRequested;
+    public event Action? ScreenshotRequested;
     public event Action? ShowWindowRequested;
     public event Action? ExitRequested;
 
@@ -26,6 +28,11 @@ public sealed class TrayIconService : IDisposable
         _logger = logger;
         _trayMenu = new ContextMenuStrip();
         _trayMenu.Items.Add("连接分身", null, (_, _) => ConnectToggleRequested?.Invoke());
+        _screenshotItem = new ToolStripMenuItem("截屏分身画面", null, (_, _) => ScreenshotRequested?.Invoke())
+        {
+            Enabled = false, // enabled once the clone session is connected
+        };
+        _trayMenu.Items.Add(_screenshotItem);
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("显示主窗口", null, (_, _) => ShowWindowRequested?.Invoke());
         _trayMenu.Items.Add(new ToolStripSeparator());
@@ -46,6 +53,7 @@ public sealed class TrayIconService : IDisposable
         if (_disposed) return;
         _trayIcon.Text = connected ? "AkiSpace - 已连接" : "AkiSpace - 未连接";
         _trayMenu.Items[0].Text = connected ? "断开分身" : "连接分身";
+        _screenshotItem.Enabled = connected; // needs a live clone session to capture
     }
 
     /// <summary>Shows or hides the tray icon (minimize-to-tray).</summary>

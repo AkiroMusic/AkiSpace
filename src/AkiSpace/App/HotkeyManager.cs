@@ -14,10 +14,12 @@ public sealed class HotkeyManager : IDisposable
     private const int WM_HOTKEY = 0x0312;
     private const int HOTKEY_TOGGLE_CONNECT = 1;
     private const int HOTKEY_SHOW_WINDOW = 2;
+    private const int HOTKEY_SCREENSHOT = 3;
     private const uint MOD_CONTROL = 0x0002;
     private const uint MOD_SHIFT = 0x0004;
     private const uint MOD_ALT = 0x0001;
     private const uint VK_D = 0x44;
+    private const uint VK_S = 0x53;
     private const uint VK_SPACE = 0x20;
 
     private readonly ILogger<HotkeyManager> _logger;
@@ -27,6 +29,7 @@ public sealed class HotkeyManager : IDisposable
 
     public event Action? ToggleConnectRequested;
     public event Action? ShowWindowRequested;
+    public event Action? ScreenshotRequested;
 
     public HotkeyManager(ILogger<HotkeyManager> logger, SettingsService settingsService)
     {
@@ -56,6 +59,15 @@ public sealed class HotkeyManager : IDisposable
             {
                 var err = Marshal.GetLastWin32Error();
                 _logger.LogWarning("Failed to register hotkey Ctrl+Alt+Space (Win32 error {Error}); may be in use", err);
+            }
+
+            // Ctrl+Shift+S captures the clone screen to the HOST clipboard. Registration
+            // failure is non-fatal (another app may own the combo) — the toolbar button
+            // and tray menu still trigger the same capture.
+            if (!_window.Register(HOTKEY_SCREENSHOT, MOD_CONTROL | MOD_SHIFT, VK_S))
+            {
+                var err = Marshal.GetLastWin32Error();
+                _logger.LogWarning("Failed to register hotkey Ctrl+Shift+S (Win32 error {Error}); may be in use", err);
             }
 
             _registered = true;
@@ -89,6 +101,9 @@ public sealed class HotkeyManager : IDisposable
                 break;
             case HOTKEY_SHOW_WINDOW:
                 ShowWindowRequested?.Invoke();
+                break;
+            case HOTKEY_SCREENSHOT:
+                ScreenshotRequested?.Invoke();
                 break;
         }
     }

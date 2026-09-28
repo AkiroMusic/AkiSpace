@@ -74,6 +74,11 @@ public static class WpfThemeHost
     public const string Hairline = "Brush.Hairline";
     public const string SpecularSweep = "Brush.SpecularSweep";
 
+    // Aurora sweep beams + star dust (background layers 2 & 3)
+    public const string SweepBeam1 = "Brush.SweepBeam1";
+    public const string SweepBeam2 = "Brush.SweepBeam2";
+    public const string StarTile = "Brush.StarTile";
+
     // Effects
     public const string EffectCard = "Effect.Card";
     public const string EffectAccent = "Effect.Accent";
@@ -190,6 +195,12 @@ public static class WpfThemeHost
         sweep.GradientStops.Add(new GradientStop(Color.FromArgb(0, p.TextPrimary.R, p.TextPrimary.G, p.TextPrimary.B), 0.42));
         sweep.Freeze();
         Application.Current.Resources[SpecularSweep] = sweep;
+
+        // Aurora sweep beams (background layer 2) — two soft radial blobs, ramp-tinted
+        Application.Current.Resources[SweepBeam1] = Glow(Tinted(p.GradB, 0x1A).Color, 0.5, 0.5, 0.5, 0.5, 1.0);
+        Application.Current.Resources[SweepBeam2] = Glow(Tinted(p.GradC, 0x14).Color, 0.5, 0.5, 0.5, 0.5, 1.0);
+        // Star-dust tile (background layer 3)
+        Application.Current.Resources[StarTile] = CreateStarTileBrush(p);
     }
 
     private static SolidColorBrush Brush(Color color)
@@ -241,5 +252,54 @@ public static class WpfThemeHost
         bitmap.WritePixels(new Int32Rect(0, 0, size, size), pixels, size * 4, 0);
         bitmap.Freeze();
         return bitmap;
+    }
+
+    /// <summary>
+    /// 256×256 star-dust tile (fixed seed) — sparse 1-2px specks, mostly white with
+    /// a few ramp-C tints on dark packs and ShadowTint specks on light packs.
+    /// Background layer 3, displayed at ~7% opacity over the aurora curtain.
+    /// </summary>
+    private static ImageBrush CreateStarTileBrush(ThemePalette p)
+    {
+        const int size = 256;
+        var pixels = new byte[size * size * 4];
+        var random = new Random(0x5174A2); // fixed seed — deterministic star dust
+        var speckColor = p.LightTheme ? p.ShadowTint : Color.FromRgb(0xFF, 0xFF, 0xFF);
+        for (var star = 0; star < 46; star++)
+        {
+            var x = random.Next(2, size - 2);
+            var y = random.Next(2, size - 2);
+            var radius = random.Next(1, 3);
+            var alpha = (byte)(p.LightTheme ? random.Next(40, 120) : random.Next(70, 200));
+            var tinted = !p.LightTheme && random.Next(3) == 0;
+            var r = tinted ? p.GradC.R : speckColor.R;
+            var g = tinted ? p.GradC.G : speckColor.G;
+            var b = tinted ? p.GradC.B : speckColor.B;
+            for (var dy = -radius; dy <= radius; dy++)
+            {
+                for (var dx = -radius; dx <= radius; dx++)
+                {
+                    if (dx * dx + dy * dy > radius * radius) continue;
+                    var px = (x + dx + size) % size;
+                    var py = (y + dy + size) % size;
+                    var idx = (py * size + px) * 4;
+                    pixels[idx] = b;     // Bgra32 layout: B, G, R, A
+                    pixels[idx + 1] = g;
+                    pixels[idx + 2] = r;
+                    pixels[idx + 3] = alpha;
+                }
+            }
+        }
+        var tile = new System.Windows.Media.Imaging.WriteableBitmap(size, size, 96, 96, PixelFormats.Bgra32, null);
+        tile.WritePixels(new Int32Rect(0, 0, size, size), pixels, size * 4, 0);
+        tile.Freeze();
+        var brush = new ImageBrush(tile)
+        {
+            TileMode = TileMode.Tile,
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewport = new Rect(0, 0, size, size),
+        };
+        brush.Freeze();
+        return brush;
     }
 }

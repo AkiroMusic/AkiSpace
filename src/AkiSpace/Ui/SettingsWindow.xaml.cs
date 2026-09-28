@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Forms;
+using AkiSpace.Common;
 using AkiSpace.Services;
 using WinFormsDialogResult = System.Windows.Forms.DialogResult;
 
@@ -19,6 +20,15 @@ public partial class SettingsWindow : ChromeWindow
         InitializeComponent();
         _settingsService = settingsService;
         LoadSettings();
+    }
+
+    /// <summary>Live preview: applies the picked color pack immediately without persisting it.</summary>
+    private void OnThemePreview(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton { Tag: string theme })
+        {
+            ThemeManager.Current.SetTheme(theme, persist: false);
+        }
     }
 
     private void LoadSettings()
@@ -41,6 +51,22 @@ public partial class SettingsWindow : ChromeWindow
         ChkGameMouse.IsChecked = s.GameMouseModeEnabled;
         TxtUsername.Text = s.CloneUsername;
         TxtLaunchPath.Text = s.LaunchProgramPath ?? string.Empty;
+        _originalTheme = s.Theme;
+        SelectThemeRadio(s.Theme);
+    }
+
+    private string _originalTheme = "dark";
+
+    private void SelectThemeRadio(string theme)
+    {
+        var radio = theme switch
+        {
+            "amber" => RdoThemeAmber,
+            "mint" => RdoThemeMint,
+            "pearl" => RdoThemePearl,
+            _ => RdoThemeDark,
+        };
+        radio.IsChecked = true;
     }
 
     private void OnBrowse(object sender, RoutedEventArgs e)
@@ -82,12 +108,17 @@ public partial class SettingsWindow : ChromeWindow
                 s.ClonePassword = newPassword;
             s.LaunchProgramPath = path;
         });
+        var theme = RdoThemeAmber.IsChecked == true ? "amber"
+            : RdoThemeMint.IsChecked == true ? "mint"
+            : RdoThemePearl.IsChecked == true ? "pearl" : "dark";
+        ThemeManager.Current.SetTheme(theme, persist: true);
         DialogResult = true;
         Close();
     }
 
     private void OnCancel(object sender, RoutedEventArgs e)
     {
+        ThemeManager.Current.SetTheme(_originalTheme, persist: false);
         DialogResult = false;
         Close();
     }

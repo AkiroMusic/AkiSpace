@@ -39,6 +39,20 @@
 
     <!-- ================= Buttons ================= -->
 
+    <!-- Stroke icon inside a toolbar button: follows the button's Foreground -->
+    <Style x:Key="BtnIcon" TargetType="Path">
+        <Setter Property="StrokeThickness" Value="1.7" />
+        <Setter Property="StrokeLineJoin" Value="Round" />
+        <Setter Property="StrokeStartLineCap" Value="Round" />
+        <Setter Property="StrokeEndLineCap" Value="Round" />
+        <Setter Property="Stretch" Value="Uniform" />
+        <Setter Property="Width" Value="15" />
+        <Setter Property="Height" Value="15" />
+        <Setter Property="Margin" Value="0,0,7,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" />
+    </Style>
+
     <!-- Primary: accent-tinted glass with accent border and text, accent glow -->
     <Style x:Key="Btn.Primary" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource Brush.AccentTint}" />
@@ -297,11 +311,34 @@
             <Setter.Value>
                 <ControlTemplate TargetType="ui:AuroraBackdrop">
                     <Grid>
+                        <!-- Layer 1: base + aurora curtain (four ramp-colored glows) -->
                         <Border Background="{DynamicResource Brush.BgBase}" />
-                        <Border Background="{DynamicResource Brush.AuroraGlow1}" />
-                        <Border Background="{DynamicResource Brush.AuroraGlow2}" />
-                        <Border Background="{DynamicResource Brush.AuroraGlow3}" />
-                        <Border Background="{DynamicResource Brush.AuroraGlow4}" />
+                        <Border x:Name="PART_Glow1" Background="{DynamicResource Brush.AuroraGlow1}" />
+                        <Border x:Name="PART_Glow2" Background="{DynamicResource Brush.AuroraGlow2}" />
+                        <Border x:Name="PART_Glow3" Background="{DynamicResource Brush.AuroraGlow3}" />
+                        <Border x:Name="PART_Glow4" Background="{DynamicResource Brush.AuroraGlow4}" />
+                        <!-- Layer 2: aurora sweep — two ramp beams orbiting the window center -->
+                        <Grid RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <RotateTransform x:Name="PART_SweepRotate" Angle="0" />
+                            </Grid.RenderTransform>
+                            <Ellipse Width="1500" Height="1500" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{DynamicResource Brush.SweepBeam1}">
+                                <Ellipse.RenderTransform>
+                                    <TranslateTransform X="340" Y="-220" />
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                            <Ellipse Width="1500" Height="1500" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{DynamicResource Brush.SweepBeam2}">
+                                <Ellipse.RenderTransform>
+                                    <TranslateTransform X="-360" Y="240" />
+                                </Ellipse.RenderTransform>
+                            </Ellipse>
+                        </Grid>
+                        <!-- Layer 3: star dust -->
+                        <Border Background="{DynamicResource Brush.StarTile}" Opacity="0.07"
+                                IsHitTestVisible="False" />
+                        <!-- Layer 4: grain -->
                         <Border Background="{DynamicResource Brush.NoiseTile}" Opacity="0.035"
                                 IsHitTestVisible="False" />
                     </Grid>
