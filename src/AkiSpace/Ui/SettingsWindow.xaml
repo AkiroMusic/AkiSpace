@@ -41,9 +41,9 @@
                                 <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="连接模式" />
                                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                     <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
-                                                 Content="标准RDP（不同用户）" GroupName="ConnMode" IsChecked="True" />
+                                                 Content="标准 RDP (不同用户)" GroupName="ConnMode" IsChecked="True" />
                                     <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
-                                                 Content="子会话（同一用户）" GroupName="ConnMode" Margin="8,0,0,0" />
+                                                 Content="子会话 (同一用户)" GroupName="ConnMode" Margin="8,0,0,0" />
                                 </StackPanel>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身桌面宽度" Margin="0,14,16,0" />
