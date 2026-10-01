@@ -20,9 +20,9 @@
             <!-- Toolbar (structural glass bar) -->
             <Border Grid.Row="0" Background="{DynamicResource Brush.GlassBg}"
                     BorderBrush="{DynamicResource Brush.GlassBorder}" BorderThickness="0,0,0,1"
-                    Padding="16,10">
+                    Padding="16,8">
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="BtnConnect" Style="{StaticResource Btn.Primary}"
+                    <Button x:Name="BtnConnect" AutomationProperties.Name="连接" Style="{StaticResource Btn.Primary}"
                             MinWidth="96" Click="OnConnect">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
@@ -30,24 +30,24 @@
                             <TextBlock Text="连接" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnDisconnect" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="90" Margin="10,0,0,0" IsEnabled="False" Click="OnDisconnect">
+                    <Button x:Name="BtnDisconnect" AutomationProperties.Name="断开" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="90" Margin="8,0,0,0" IsEnabled="False" Click="OnDisconnect">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M8,5 L8,3.5 A4.5,4.5 0 0,1 17,3.5 L17,5 M5.5,5 L19.5,5 A2,2 0 0,1 21.5,7 L21.5,19 A2,2 0 0,1 19.5,21 L5.5,21 A2,2 0 0,1 3.5,19 L3.5,7 A2,2 0 0,1 5.5,5 Z M9,9 L16,17 M16,9 L9,17" />
                             <TextBlock Text="断开" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnTerminate" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="90" Margin="10,0,0,0" IsEnabled="False" Click="OnTerminate">
+                    <Button x:Name="BtnTerminate" AutomationProperties.Name="终止" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="90" Margin="8,0,0,0" IsEnabled="False" Click="OnTerminate">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M18,6 L6,18 M6,6 L18,18" />
                             <TextBlock Text="终止" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnGameMouse" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="100" Margin="10,0,0,0" Visibility="Collapsed" IsEnabled="False"
+                    <Button x:Name="BtnGameMouse" AutomationProperties.Name="游戏鼠标" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="100" Margin="8,0,0,0" Visibility="Collapsed" IsEnabled="False"
                             Click="OnGameMouse">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
@@ -55,16 +55,16 @@
                             <TextBlock x:Name="GameMouseText" Text="游戏鼠标" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnLaunch" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="100" Margin="10,0,0,0" IsEnabled="False" Click="OnLaunch">
+                    <Button x:Name="BtnLaunch" AutomationProperties.Name="启动程序" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="100" Margin="8,0,0,0" IsEnabled="False" Click="OnLaunch">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M6,3 L20,12 L6,21 Z" />
                             <TextBlock Text="启动程序" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnScreenshot" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="84" Margin="10,0,0,0" IsEnabled="False" Click="OnScreenshot"
+                    <Button x:Name="BtnScreenshot" AutomationProperties.Name="截屏" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="84" Margin="8,0,0,0" IsEnabled="False" Click="OnScreenshot"
                             ToolTip="截取分身画面并复制到剪贴板 (Ctrl+Shift+S)">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
@@ -72,16 +72,16 @@
                             <TextBlock Text="截屏" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnSetup" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="100" Margin="10,0,0,0" Click="OnSetup">
+                    <Button x:Name="BtnSetup" AutomationProperties.Name="环境检查" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="100" Margin="8,0,0,0" Click="OnSetup">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M12,2 L13.8,6.2 L18.2,4.6 L17.8,9.2 L22,11 L17.8,12.8 L18.2,17.4 L13.8,15.8 L12,20 L10.2,15.8 L5.8,17.4 L6.2,12.8 L2,11 L6.2,9.2 L5.8,4.6 L10.2,6.2 Z" />
                             <TextBlock Text="环境检查" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnSettings" Style="{StaticResource Btn.Ghost}"
-                            MinWidth="84" Margin="10,0,0,0" Click="OnSettings">
+                    <Button x:Name="BtnSettings" AutomationProperties.Name="设置" Style="{StaticResource Btn.Ghost}"
+                            MinWidth="84" Margin="8,0,0,0" Click="OnSettings">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M12,15 A3,3 0 1,0 12,9 A3,3 0 1,0 12,15 Z M19.4,15 A1.65,1.65 0 0,0 20,16.7 L20,16.7 A1.65,1.65 0 0,1 19.4,19.2 L17.9,19.9 A1.65,1.65 0 0,1 15.7,19.3 L15.5,18.8 A1.65,1.65 0 0,0 13.9,17.9 L10.1,17.9 A1.65,1.65 0 0,0 8.5,18.8 L8.3,19.3 A1.65,1.65 0 0,1 6.1,19.9 L4.6,19.2 A1.65,1.65 0 0,1 4,16.7 A1.65,1.65 0 0,0 4.6,15 L4.6,15 A1.65,1.65 0 0,0 4,13.3 L4.6,8.3 A1.65,1.65 0 0,1 6.1,4.8 L7.6,4.1 A1.65,1.65 0 0,1 9.8,4.7 L10,5.2 A1.65,1.65 0 0,0 11.6,6.1 L12.4,6.1 A1.65,1.65 0 0,0 14,5.2 L14.2,4.7 A1.65,1.65 0 0,1 16.4,4.1 L17.9,4.8 A1.65,1.65 0 0,1 19.4,8.3 L20,13.3 A1.65,1.65 0 0,1 19.4,15 Z" />
@@ -92,44 +92,38 @@
             </Border>
 
             <!-- Status row -->
-            <Border Grid.Row="1" Padding="16,7">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal">
-                        <Ellipse x:Name="DotChildSession" Width="7" Height="7" Margin="0,0,7,0"
+            <Border Grid.Row="1" Padding="16,6">
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,32,0">
+                        <Ellipse x:Name="DotChildSession" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblChildSession" Style="{StaticResource Text.Secondary}"
                                    Text="子会话: 检测中" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <Ellipse x:Name="DotConnection" Width="7" Height="7" Margin="0,0,7,0"
+                    <StackPanel Orientation="Horizontal" Margin="0,0,32,0">
+                        <Ellipse x:Name="DotConnection" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblConnection" Style="{StaticResource Text.Secondary}"
                                    Text="连接: 未连接" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Ellipse x:Name="DotWrapper" Width="7" Height="7" Margin="0,0,7,0"
+                    <StackPanel Orientation="Horizontal" Margin="0,0,32,0">
+                        <Ellipse x:Name="DotWrapper" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblWrapper" Style="{StaticResource Text.Secondary}"
                                    Text="RDP 解锁: 检测中" />
                     </StackPanel>
-                    <StackPanel Grid.Column="3" Orientation="Horizontal">
-                        <Ellipse x:Name="DotPerformance" Width="7" Height="7" Margin="0,0,7,0"
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse x:Name="DotPerformance" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.GradB}" />
                         <TextBlock x:Name="LblPerformance" Style="{StaticResource Text.Secondary}"
                                    Text="CPU: 0% | 内存: 0 MB" />
                     </StackPanel>
-                </Grid>
+                </StackPanel>
             </Border>
 
             <!-- Toast feedback (capture / status hints), fades out automatically -->
-            <Border x:Name="ToastPill" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Top"
-                    Margin="0,2,0,0" Padding="18,8" CornerRadius="{StaticResource Radius.Full}"
+            <Border x:Name="ToastPill" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Top"
+                    Margin="0,14,0,0" Padding="18,8" CornerRadius="{StaticResource Radius.Full}"
                     Background="{DynamicResource Brush.GlassBgStrong}"
                     BorderBrush="{DynamicResource Brush.LiquidBorder}" BorderThickness="1"
                     Effect="{DynamicResource Effect.Card}" Opacity="0" IsHitTestVisible="False">
@@ -144,7 +138,7 @@
             </Border>
 
             <!-- RDP viewer area (the WindowsFormsHost is injected here by the shell) -->
-            <Grid Grid.Row="2" Margin="16,8,16,12">
+            <Grid Grid.Row="2" Margin="16,8,16,8">
                 <Border Background="Black"
                         BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1"
                         CornerRadius="{StaticResource Radius.Md}" />
@@ -163,7 +157,7 @@
                                   Fill="{DynamicResource Brush.GradC}" Stretch="Fill" Width="13" Height="13"
                                   Canvas.Left="48" Canvas.Top="24" Opacity="0.5" />
                         </Canvas>
-                        <TextBlock HorizontalAlignment="Center" Margin="0,18,0,0" FontSize="15"
+                        <TextBlock HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="15"
                                    Style="{StaticResource Text.Secondary}" Text="分身桌面未连接" />
                         <TextBlock HorizontalAlignment="Center" Margin="0,6,0,0"
                                    Style="{StaticResource Text.Tertiary}"
