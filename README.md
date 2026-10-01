@@ -25,7 +25,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **Alt Release**: Hold Alt to temporarily release cursor back to host desktop
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
 - **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc.
-- **Performance Monitor**: Status bar shows real-time CPU & memory usage
+- **Performance Monitor**: Status bar shows real-time **system-wide** CPU & memory usage (Task-Manager comparable: GetSystemTimes delta + GlobalMemoryStatusEx)
 - **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, color pack, smart scaling, hotkeys, etc.)
 
 ---
@@ -218,7 +218,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **Alt 键释放**：按住 Alt 临时释放光标，回到主桌面操作
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
 - **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件
-- **性能监控**：状态栏实时显示 CPU 和内存使用率
+- **性能监控**：状态栏实时显示**系统级** CPU 占用与内存使用（与任务管理器同口径：GetSystemTimes 增量 + GlobalMemoryStatusEx）
 - **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、配色包、智能缩放、热键等）
 
 ---
