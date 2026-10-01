@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using AkiSpace.Controls;
@@ -70,6 +71,12 @@ public sealed class ConnectionController
     // ~1-2s apart) into a single dialog; distinct or later failures still notify.
     private string? _lastFailureReason;
     private long _lastFailureDialogAt;
+
+    // Previous GetSystemTimes sample for the 1 Hz system-CPU delta (the status
+    // bar shows Task-Manager-comparable machine numbers, not this process's).
+    private ulong _prevIdleTime;
+    private ulong _prevKernelTime;
+    private bool _perfHasPrev;
 
     // RDP window handles snapshotted ON the UI thread (RefreshRdpHandles) so the
     // mouse-forwarder's 200 Hz poller can do pure-Win32 bounds/focus checks without
@@ -826,16 +833,36 @@ public sealed class ConnectionController
 
             if (_settingsService.Current.ShowPerformance)
             {
-                // GetCurrentProcess() allocates an OS handle per call; without dispose
-                // the 1 Hz poll leaks handles until GC finalizers run. `using` releases
-                // it deterministically each tick.
-                using var process = Process.GetCurrentProcess();
-                var elapsed = DateTime.Now - process.StartTime;
-                var cpuUsage = elapsed.TotalMilliseconds > 0
-                    ? process.TotalProcessorTime.TotalMilliseconds / elapsed.TotalMilliseconds * 100
-                    : 0;
-                var memoryMB = process.WorkingSet64 / 1024 / 1024;
-                PerformanceStatusChanged?.Invoke($"CPU: {cpuUsage:F1}% | 内存: {memoryMB} MB");
+                // Task-Manager-comparable machine numbers: system CPU% from the
+                // GetSystemTimes delta between 1 Hz polls, memory from
+                // GlobalMemoryStatusEx. (The old readout showed THIS process's
+                // lifetime-average CPU and working set — users compared it against
+                // Task Manager and rightly found the numbers didn't match.)
+                if (GetSystemTimes(out var idle, out var kernel, out _))
+                {
+                    var cpuUsage = 0.0;
+                    if (_perfHasPrev)
+                    {
+                        // kernel time includes idle + user, so busy = kernel - idle
+                        var kernelDelta = kernel - _prevKernelTime;
+                        var idleDelta = idle - _prevIdleTime;
+                        if (kernelDelta > 0)
+                            cpuUsage = (double)(kernelDelta - idleDelta) / kernelDelta * 100.0;
+                    }
+                    _prevIdleTime = idle;
+                    _prevKernelTime = kernel;
+                    _perfHasPrev = true;
+
+                    var mem = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
+                    var memText = "不可用";
+                    if (GlobalMemoryStatusEx(ref mem))
+                    {
+                        var usedGB = (mem.ullTotalPhys - mem.ullAvailPhys) / 1073741824.0;
+                        var totalGB = mem.ullTotalPhys / 1073741824.0;
+                        memText = $"{mem.dwMemoryLoad}% ({usedGB:F1}/{totalGB:F1} GB)";
+                    }
+                    PerformanceStatusChanged?.Invoke($"CPU: {cpuUsage:F0}% | 内存: {memText}");
+                }
             }
         }
         catch (Exception ex)
@@ -879,4 +906,26 @@ public sealed class ConnectionController
         var hwnd = Volatile.Read(ref _rdpInputWindowHandle);
         return RdpActiveXHost.IsWindowFocused(hwnd);
     }
+
+    // ---- system performance readout (kernel32) ----
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetSystemTimes(out ulong idleTime, out ulong kernelTime, out ulong userTime);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MEMORYSTATUSEX
+    {
+        public uint dwLength;
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX buffer);
 }
