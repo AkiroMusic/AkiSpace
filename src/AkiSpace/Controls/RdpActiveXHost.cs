@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using AkiSpace.Common;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
 
@@ -274,8 +275,8 @@ public sealed class RdpActiveXHost : AxHost
             SetComProperty(client, "DesktopWidth", desktopWidth);
             SetComProperty(client, "DesktopHeight", desktopHeight);
             SetComProperty(client, "ColorDepth", colorDepth);
-            SetComProperty(client, "ConnectingText", "正在创建 AkiSpace 桌面分身...");
-            SetComProperty(client, "DisconnectedText", "AkiSpace 桌面分身已断开");
+            SetComProperty(client, "ConnectingText", Loc.T("Rdp_Connecting"));
+            SetComProperty(client, "DisconnectedText", Loc.T("Rdp_Disconnected"));
 
             // --- Secured settings (via SecuredSettings2) ---
             var secured = GetComProperty(client, "SecuredSettings2");

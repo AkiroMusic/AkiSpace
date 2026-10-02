@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Forms.Integration;
 using AkiSpace.App;
+using AkiSpace.Common;
 using AkiSpace.Controls;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
@@ -45,8 +46,8 @@ public partial class MainWindow : Window
     private void BindController()
     {
         _controller.ConnectStateChanged += ApplyConnectState;
-        _controller.ChildSessionStatusChanged += text => Dispatcher.Invoke(() => SetStatus(LblChildSession, DotChildSession, text));
-        _controller.WrapperStatusChanged += text => Dispatcher.Invoke(() => SetStatus(LblWrapper, DotWrapper, text));
+        _controller.ChildSessionStatusChanged += line => Dispatcher.Invoke(() => SetStatus(LblChildSession, DotChildSession, line));
+        _controller.WrapperStatusChanged += line => Dispatcher.Invoke(() => SetStatus(LblWrapper, DotWrapper, line));
         _controller.PerformanceStatusChanged += text => Dispatcher.Invoke(() => LblPerformance.Text = text);
         _controller.RdpHostChanged += OnRdpHostChanged;
         _controller.FullScreenRequested += () => Dispatcher.Invoke(EnterFullScreen);
@@ -62,7 +63,7 @@ public partial class MainWindow : Window
         BtnGameMouse.IsEnabled = s.GameMouseEnabled;
         GameMouseText.Text = s.GameMouseText;
         BtnLaunch.IsEnabled = s.LaunchEnabled;
-        SetStatus(LblConnection, DotConnection, s.ConnectionStatusText);
+        SetStatus(LblConnection, DotConnection, new StatusLine(s.ConnectionStatusText, s.ConnectionLevel));
     }
 
     private void OnRdpHostChanged(RdpActiveXHost? host)
@@ -121,7 +122,7 @@ public partial class MainWindow : Window
         var settings = new SettingsWindow(AppShellServices.Settings);
         settings.Owner = this;
         settings.ShowDialog();
-        _controller.SetStatusText("连接: 设置已保存");
+        _controller.SetStatusText("Conn_SettingsSaved");
     }
 
     private void OnGitHubLink(object sender, RoutedEventArgs e) =>
@@ -155,35 +156,29 @@ public partial class MainWindow : Window
             || bitmap is null
             || !ChildScreenCapture.CopyToClipboard(bitmap))
         {
-            _controller.SetStatusText("截屏: 未连接分身或复制失败");
-            ShowToast("截屏失败 — 分身未连接", success: false);
+            _controller.SetStatusText("Shot_StatusFail");
+            ShowToast(Loc.T("Shot_ToastFail"), success: false);
             return;
         }
-        _controller.SetStatusText("已截取分身画面 → 剪贴板");
-        ShowToast("分身画面已复制到剪贴板");
+        _controller.SetStatusText("Shot_StatusOk", StatusLevel.Good);
+        ShowToast(Loc.T("Shot_ToastOk"));
     }
 
-    /// <summary>Sets a status label and its lead dot in one call (dot color follows the text).</summary>
-    private static void SetStatus(System.Windows.Controls.TextBlock label, System.Windows.Shapes.Ellipse dot, string text)
+    /// <summary>Sets a status label and its lead dot in one call (dot color follows the level).</summary>
+    private static void SetStatus(System.Windows.Controls.TextBlock label, System.Windows.Shapes.Ellipse dot, StatusLine line)
     {
-        label.Text = text;
-        dot.Fill = StatusBrushFor(text);
+        label.Text = line.Text;
+        dot.Fill = LevelBrush(line.Level);
     }
 
-    /// <summary>Dot color heuristic over the controller's status strings: running/connected → success,
-    /// in-flight → warning, off → tertiary.</summary>
-    private static System.Windows.Media.Brush StatusBrushFor(string text)
+    /// <summary>Dot color from the controller's semantic level — locale-independent by
+    /// construction (the previous display-text substring match broke under English strings).</summary>
+    private static System.Windows.Media.Brush LevelBrush(StatusLevel level) => level switch
     {
-        if (text.Contains("已连接") || text.Contains("活动") || text.Contains("已安装"))
-        {
-            return ThemeBrush("Brush.Success");
-        }
-        if (text.Contains("正在") || text.Contains("检测中"))
-        {
-            return ThemeBrush("Brush.Warning");
-        }
-        return ThemeBrush("Brush.TextTertiary");
-    }
+        StatusLevel.Good => ThemeBrush("Brush.Success"),
+        StatusLevel.InFlight => ThemeBrush("Brush.Warning"),
+        _ => ThemeBrush("Brush.TextTertiary"),
+    };
 
     private static System.Windows.Media.Brush ThemeBrush(string key) =>
         System.Windows.Application.Current.TryFindResource(key) as System.Windows.Media.Brush

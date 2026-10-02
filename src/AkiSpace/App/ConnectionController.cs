@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using AkiSpace.Common;
 using AkiSpace.Controls;
 using AkiSpace.Input;
 using AkiSpace.Ipc;
@@ -10,6 +11,17 @@ using AkiSpace.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AkiSpace.App;
+
+/// <summary>Semantic status level for the status-row lead dots (locale-independent).</summary>
+public enum StatusLevel
+{
+    Idle,
+    InFlight,
+    Good,
+}
+
+/// <summary>A status row's display text plus its semantic level.</summary>
+public sealed record StatusLine(string Text, StatusLevel Level);
 
 /// <summary>
 /// Complete UI-facing connect state. The shell (WinForms or WPF) renders this
@@ -23,7 +35,8 @@ public sealed record ConnectUiState(
     bool GameMouseEnabled,
     string GameMouseText,
     bool LaunchEnabled,
-    string ConnectionStatusText);
+    string ConnectionStatusText,
+    StatusLevel ConnectionLevel);
 
 /// <summary>
 /// Framework-agnostic owner of the connect orchestration, the RDP host lifecycle,
@@ -50,8 +63,8 @@ public sealed class ConnectionController
 
     // ---- shell bindings ----
     public event Action<ConnectUiState>? ConnectStateChanged;
-    public event Action<string>? ChildSessionStatusChanged;
-    public event Action<string>? WrapperStatusChanged;
+    public event Action<StatusLine>? ChildSessionStatusChanged;
+    public event Action<StatusLine>? WrapperStatusChanged;
     public event Action<string>? PerformanceStatusChanged;
     public event Action<bool>? TrayConnectedChanged;
     /// <summary>Raised with the new host when one is created and with null when torn down.</summary>
@@ -93,9 +106,13 @@ public sealed class ConnectionController
     private bool _terminateEnabled;
     private bool _gameMouseVisible;
     private bool _gameMouseEnabled;
-    private string _gameMouseText = "游戏鼠标";
+    private bool _gameMouseOn;
     private bool _launchEnabled;
-    private string _statusText = "连接: 未连接";
+    // Connection status is stored as a Loc key (+ optional format args) so a
+    // language switch can re-render the current state in the new language.
+    private string _statusKey = "Conn_NotConnected";
+    private StatusLevel _statusLevel = StatusLevel.Idle;
+    private object?[] _statusArgs = [];
 
     private string _cloneUsername => _settingsService.Current.CloneUsername;
     private string _clonePassword => _settingsService.Current.ClonePassword;
@@ -212,7 +229,7 @@ public sealed class ConnectionController
                 var password = _promptForClonePassword();
                 if (string.IsNullOrEmpty(password))
                 {
-                    SetStatusText("连接: 未提供密码");
+                    SetStatusText("Conn_NoPassword");
                     return;
                 }
                 _settingsService.Update(s => s.ClonePassword = password);
@@ -220,18 +237,15 @@ public sealed class ConnectionController
             }
 
             _connecting = true;
-            SetStatusText("连接: 正在准备...");
+            SetStatusText("Conn_Preparing", StatusLevel.InFlight);
 
             if (settings.ConnectionMode != ConnectionMode.ChildSession
                 && !await _sessionManager.IsRdpListenerActiveAsync())
             {
                 System.Windows.Forms.MessageBox.Show(
-                    "RDP 监听器暂时未响应连接探测。可能原因：\n" +
-                    "1) TermService 正在重启（禁用 RDP Wrapper 后需要 10–20 秒）— 请稍等再试\n" +
-                    "2) 真未监听 — 运行「环境检查/修复」→「一键修复」\n" +
-                    "3) 防火墙/杀软拦截 127.0.0.1:3389",
+                    Loc.T("Box_ListenerDown"),
                     "AkiSpace", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
-                ResetConnectUi("连接: RDP 未就绪");
+                ResetConnectUi("Conn_RdpNotReady");
                 return;
             }
 
@@ -249,7 +263,7 @@ public sealed class ConnectionController
                 ? settings.RdpPort
                 : _sessionManager.GetConfiguredRdpPort();
 
-            SetStatusText($"连接: 正在连接 127.0.0.1:{port} ...");
+            SetStatusText("Conn_Connecting", StatusLevel.InFlight, $"127.0.0.1:{port}");
 
             _defer(() => _defer(() =>
             {
@@ -264,21 +278,11 @@ public sealed class ConnectionController
                         {
                             _logger.LogWarning("RDP Wrapper hook detected; child session will fail: {Detail}", hookCheck.Detail);
                             System.Windows.Forms.MessageBox.Show(
-                                "检测到 RDP Wrapper (TermWrap.dll) 已 hook TermService。\n\n"
-                                + "BetterGI 官方文档明确说明：RDP Wrapper 与桌面分身（子会话）功能不兼容，"
-                                + "两者不能同时使用。RDP Wrapper 的 hook 会导致子会话 broker 无法创建会话，"
-                                + "表现为「远程桌面无法连接到远程计算机 (516)」。\n\n"
-                                + "请按以下步骤解决：\n"
-                                + "1. 在 AkiSpace 中打开「环境检查/修复」\n"
-                                + "2. 点击「一键修复」（最新版会禁用 RDP Wrapper 并恢复 termsrv.dll）\n"
-                                + "3. 等待 TermService 重启完成\n"
-                                + "4. 重新尝试子会话连接\n\n"
-                                + "RDP Wrapper 和 AkiSpace 子会话功能重复（二者都是为多用户场景设计），"
-                                + "只能二选一。建议直接使用 AkiSpace 子会话。",
-                                "AkiSpace — RDP Wrapper 与子会话冲突",
+                                Loc.T("Box_WrapperConflict"),
+                                Loc.T("Box_WrapperConflictTitle"),
                                 System.Windows.Forms.MessageBoxButtons.OK,
                                 System.Windows.Forms.MessageBoxIcon.Warning);
-                            ResetConnectUi("连接: RDP Wrapper 冲突");
+                            ResetConnectUi("Conn_WrapperConflict");
                             return;
                         }
 
@@ -306,7 +310,7 @@ public sealed class ConnectionController
                     // leave the UI in a half-connected state; route it through the
                     // normal reset instead.
                     _logger.LogError(ex, "Deferred connect body failed");
-                    ResetConnectUi("连接: 连接失败");
+                    ResetConnectUi("Conn_Failed");
                 }
             }));
 
@@ -325,8 +329,8 @@ public sealed class ConnectionController
         catch (Exception ex)
         {
             _logger.LogError(ex, "Connect failed");
-            ResetConnectUi("连接: 连接失败");
-            System.Windows.Forms.MessageBox.Show($"连接失败：{ex.Message}", "AkiSpace",
+            ResetConnectUi("Conn_Failed");
+            System.Windows.Forms.MessageBox.Show(Loc.F("Box_ConnectFailed", ex.Message), Loc.T("Box_ConnectFailTitle"),
                 System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
         }
     }
@@ -335,7 +339,7 @@ public sealed class ConnectionController
     /// Restores the buttons/status after a connect attempt ends without a session
     /// (early return, connect exception, or reported connection failure).
     /// </summary>
-    private void ResetConnectUi(string statusText)
+    private void ResetConnectUi(string statusKey)
     {
         _connecting = false;
         _isConnected = false;
@@ -343,9 +347,9 @@ public sealed class ConnectionController
         _disconnectEnabled = false;
         _terminateEnabled = false;
         _gameMouseEnabled = false;
-        _gameMouseText = "游戏鼠标";
+        _gameMouseOn = false;
         _launchEnabled = false;
-        SetStatusText(statusText);
+        SetStatusText(statusKey);
         TrayConnectedChanged?.Invoke(false);
     }
 
@@ -384,10 +388,10 @@ public sealed class ConnectionController
         _disconnectEnabled = false;
         _terminateEnabled = false;
         _gameMouseEnabled = false;
-        _gameMouseText = "游戏鼠标";
+        _gameMouseOn = false;
         _launchEnabled = false;
         _mouseForwarder.SetGameMouseModeEnabled(false);
-        SetStatusText("连接: 已断开");
+        SetStatusText("Conn_Disconnected");
         _connecting = false;
         _isConnected = false;
         TrayConnectedChanged?.Invoke(false);
@@ -398,12 +402,12 @@ public sealed class ConnectionController
         var sid = _sessionManager.TryGetChildSessionId();
         if (sid is null)
         {
-            System.Windows.Forms.MessageBox.Show("当前没有活动的子会话。", "AkiSpace",
+            System.Windows.Forms.MessageBox.Show(Loc.T("Box_NoChildSession"), "AkiSpace",
                 System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             return;
         }
         var confirm = System.Windows.Forms.MessageBox.Show(
-            $"确定要终止子会话（ID {sid.Value}）吗？其中的程序将全部关闭。",
+            Loc.F("Box_TerminateConfirm", sid.Value),
             "AkiSpace", System.Windows.Forms.MessageBoxButtons.YesNo, System.Windows.Forms.MessageBoxIcon.Question);
         if (confirm != System.Windows.Forms.DialogResult.Yes) return;
 
@@ -414,17 +418,17 @@ public sealed class ConnectionController
             _disconnectEnabled = false;
             _terminateEnabled = false;
             _gameMouseEnabled = false;
-            _gameMouseText = "游戏鼠标";
+            _gameMouseOn = false;
             _launchEnabled = false;
             _mouseForwarder.SetGameMouseModeEnabled(false);
-            SetStatusText("连接: 子会话已终止");
+            SetStatusText("Conn_Terminated");
             _connecting = false;
             _isConnected = false;
             TrayConnectedChanged?.Invoke(false);
         }
         else
         {
-            SetStatusText("连接: 终止失败");
+            SetStatusText("Conn_TerminateFailed");
         }
     }
 
@@ -434,30 +438,38 @@ public sealed class ConnectionController
         if (!enabled && !_mouseForwarder.IsAgentConnected)
         {
             System.Windows.Forms.MessageBox.Show(
-                "回放 Agent 未连接。游戏鼠标模式需要分身侧运行回放 Agent（--agent 模式）。\n" +
-                "请先在分身会话中启动 Agent，或在 Agent 落地前使用标准 RDP 鼠标。",
-                "AkiSpace — 游戏鼠标", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                Loc.T("Box_GameMouseAgent"),
+                Loc.T("Box_GameMouseTitle"), System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
             return;
         }
         _mouseForwarder.SetGameMouseModeEnabled(!enabled);
-        _gameMouseText = enabled ? "游戏鼠标" : "游戏鼠标: 开";
+        _gameMouseOn = !enabled;
         _settingsService.Update(s => s.GameMouseModeEnabled = !enabled);
         ApplyState();
     }
 
-    /// <summary>Status text set by the shell after dialogs close (e.g. 设置已保存).</summary>
-    public void SetStatusText(string text)
+    /// <summary>Sets the connection status line from a Loc key (optionally with format
+    /// args), so a language switch can re-render the current state in the new language.</summary>
+    public void SetStatusText(string statusKey, StatusLevel level = StatusLevel.Idle, params object?[] args)
     {
-        _statusText = text;
+        _statusKey = statusKey;
+        _statusLevel = level;
+        _statusArgs = args;
         ApplyState();
     }
+
+    /// <summary>Re-emits the mirrored UI state; called after a language switch.</summary>
+    public void RefreshTexts() => ApplyState();
 
     private void ApplyState()
     {
         ConnectStateChanged?.Invoke(new ConnectUiState(
             _connectEnabled, _disconnectEnabled, _terminateEnabled,
-            _gameMouseVisible, _gameMouseEnabled, _gameMouseText,
-            _launchEnabled, _statusText));
+            _gameMouseVisible, _gameMouseEnabled,
+            Loc.T(_gameMouseOn ? "Main_GameMouseOn" : "Main_GameMouse"),
+            _launchEnabled,
+            _statusArgs.Length == 0 ? Loc.T(_statusKey) : Loc.F(_statusKey, _statusArgs),
+            _statusLevel));
     }
 
     // ---------------------------------------------------------------- Agent Launch
@@ -509,7 +521,7 @@ public sealed class ConnectionController
             if (_processLauncher.LaunchInChildSession(exePath, sid.Value, args))
             {
                 _logger.LogInformation("Agent launched in child session {Sid} (nonce delivered via file)", sid.Value);
-                SetStatusText("连接: 已连接 — Agent 启动中");
+                SetStatusText("Conn_ConnectedAgent", StatusLevel.Good);
             }
             else
             {
@@ -695,25 +707,25 @@ public sealed class ConnectionController
         var sid = _sessionManager.TryGetChildSessionId();
         if (sid is null)
         {
-            System.Windows.Forms.MessageBox.Show("请先连接分身。", "AkiSpace",
+            System.Windows.Forms.MessageBox.Show(Loc.T("Box_ConnectFirst"), "AkiSpace",
                 System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Information);
             return;
         }
         using var ofd = new System.Windows.Forms.OpenFileDialog
         {
-            Title = "选择要在分身会话中启动的程序",
-            Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+            Title = Loc.T("Set_DlgTitle"),
+            Filter = Loc.T("Set_DlgFilter"),
         };
         if (ofd.ShowDialog(_dialogOwner()) != System.Windows.Forms.DialogResult.OK) return;
 
         if (_processLauncher.LaunchInChildSession(ofd.FileName, sid.Value))
         {
-            SetStatusText($"连接: 已在分身（会话 {sid.Value}）中启动 {Path.GetFileName(ofd.FileName)}");
+            SetStatusText("Conn_Launched", StatusLevel.Good, Path.GetFileName(ofd.FileName), sid.Value);
         }
         else
         {
-            SetStatusText("连接: 启动失败（详见日志）");
-            System.Windows.Forms.MessageBox.Show("启动失败。可能是权限不足或 Task Scheduler 服务不可用。", "AkiSpace",
+            SetStatusText("Conn_LaunchFailed");
+            System.Windows.Forms.MessageBox.Show(Loc.T("Box_LaunchFail"), "AkiSpace",
                 System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
         }
     }
@@ -724,7 +736,9 @@ public sealed class ConnectionController
     {
         if (_closing) return;
         _logger.LogInformation("RDP login complete event");
-        _statusText = "连接: 已连接 — 分身桌面就绪";
+        _statusKey = "Conn_Ready";
+        _statusLevel = StatusLevel.Good;
+        _statusArgs = [];
         _gameMouseEnabled = true;
         _connecting = false;
         _isConnected = true;
@@ -776,7 +790,7 @@ public sealed class ConnectionController
     {
         if (_closing) return;
         _logger.LogWarning("RDP connection failed: {Reason}", reason);
-        ResetConnectUi("连接: 连接失败");
+        ResetConnectUi("Conn_Failed");
 
         // The ActiveX connect helper fires ConnectionFailed once per retry attempt
         // (typically 3, a few seconds apart). Collapse them into one dialog so the
@@ -785,7 +799,7 @@ public sealed class ConnectionController
         if (reason == _lastFailureReason && now - _lastFailureDialogAt < 15000) return;
         _lastFailureReason = reason;
         _lastFailureDialogAt = now;
-        System.Windows.Forms.MessageBox.Show(reason, "AkiSpace 连接",
+        System.Windows.Forms.MessageBox.Show(reason, Loc.T("Box_ConnectFailTitle"),
             System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
     }
 
@@ -814,18 +828,20 @@ public sealed class ConnectionController
         {
             var sid = _sessionManager.TryGetChildSessionId();
             ChildSessionStatusChanged?.Invoke(sid.HasValue
-                ? $"子会话: 活动 (ID {sid.Value})"
-                : "子会话: 无");
+                ? new StatusLine(Loc.F("Child_Active", sid.Value), StatusLevel.Good)
+                : new StatusLine(Loc.T("Child_None"), StatusLevel.Idle));
 
             WrapperStatusChanged?.Invoke(_sessionManager.IsRdpWrapperInstalled()
-                ? "RDP 解锁: 已安装"
-                : "RDP 解锁: 未安装");
+                ? new StatusLine(Loc.T("Wrap_Installed"), StatusLevel.Good)
+                : new StatusLine(Loc.T("Wrap_NotInstalled"), StatusLevel.Idle));
 
             if (_rdpHost != null)
             {
                 RefreshRdpHandles();
                 var connected = _rdpHost.GetConnectedState();
-                _statusText = connected ? "连接: 已连接" : "连接: 未连接";
+                _statusKey = connected ? "Conn_Connected" : "Conn_NotConnected";
+                _statusLevel = connected ? StatusLevel.Good : StatusLevel.Idle;
+                _statusArgs = [];
                 _isConnected = connected;
                 ApplyState();
                 TrayConnectedChanged?.Invoke(connected);
@@ -854,14 +870,14 @@ public sealed class ConnectionController
                     _perfHasPrev = true;
 
                     var mem = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
-                    var memText = "不可用";
+                    var memText = Loc.T("Perf_NA");
                     if (GlobalMemoryStatusEx(ref mem))
                     {
                         var usedGB = (mem.ullTotalPhys - mem.ullAvailPhys) / 1073741824.0;
                         var totalGB = mem.ullTotalPhys / 1073741824.0;
                         memText = $"{mem.dwMemoryLoad}% ({usedGB:F1}/{totalGB:F1} GB)";
                     }
-                    PerformanceStatusChanged?.Invoke($"CPU: {cpuUsage:F0}% | 内存: {memText}");
+                    PerformanceStatusChanged?.Invoke(Loc.F("Perf_Status", $"{cpuUsage:F0}", memText));
                 }
             }
         }

@@ -15,6 +15,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **One-click Clone**: Click "Connect" or press `Ctrl+Shift+D` to instantly connect; embedded window shows the clone desktop live
 - **One-click Clone Screenshot**: Toolbar button, tray item or `Ctrl+Shift+S` captures the clone desktop straight to the host clipboard (Bitmap + PNG formats; paste into Paint, Office or chat apps)
 - **Aurora Glass UI**: WPF frontend with four switchable color packs — Aurora Dusk & Amber Afterglow (dark), Mint Fresh & Pearl Blush (light) — live preview in Settings; animated aurora backdrop, liquid-glass cards, smooth scrolling, status dots and toast feedback
+- **Bilingual UI (EN / 中文)**: The entire interface — windows, dialogs, tray menu, status line, messages, even the elevated fix console — switches between English (default) and Chinese instantly from Settings → Appearance, and the choice persists
 - **Dual Connection Modes**: Switch between "Standard RDP" (separate account) and "Child Session" (BetterGI-style, same user) in Settings
 - **System Tray**: Minimize to tray; double-click tray icon to restore; right-click menu for connect/screenshot/show/quit
 - **Global Hotkeys**:
@@ -26,7 +27,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
 - **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc.
 - **Performance Monitor**: Status bar shows real-time **system-wide** CPU & memory usage (Task-Manager comparable: GetSystemTimes delta + GlobalMemoryStatusEx)
-- **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, color pack, smart scaling, hotkeys, etc.)
+- **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, color pack, language, smart scaling, hotkeys, etc.)
 
 ---
 
@@ -208,6 +209,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **一键连接分身**：点击「连接」或按 `Ctrl+Shift+D` 立即连接，内嵌窗口实时显示分身桌面
 - **一键截屏分身**：工具栏按钮、托盘菜单或 `Ctrl+Shift+S` 把分身桌面直接截取到主系统剪贴板（同时含 Bitmap 与 PNG 两种格式，可粘贴到画图、Office 或聊天工具）
 - **Aurora Glass 界面**：WPF 前端，四套可切换配色包——极光暮色 / 琥珀霞光（深色）、薄荷清新 / 珍珠雾粉（浅色），设置内即时预览；极光动效背景、液态玻璃卡片、平滑滚动、状态指示点与 Toast 反馈
+- **中英双语界面**：整个界面——窗口、对话框、托盘菜单、状态栏、提示信息乃至管理员修复控制台——在「设置 → 外观」一键切换中英文（默认英文），即时生效并持久化
 - **双连接模式**：支持「标准 RDP」（独立账户）和「子会话」（BetterGI 同款，当前账户）两种模式，在设置中切换
 - **系统托盘**：最小化到系统托盘，双击托盘图标快速恢复，右键菜单支持连接/截屏/显示/退出
 - **全局热键**：
@@ -219,7 +221,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
 - **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件
 - **性能监控**：状态栏实时显示**系统级** CPU 占用与内存使用（与任务管理器同口径：GetSystemTimes 增量 + GlobalMemoryStatusEx）
-- **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、配色包、智能缩放、热键等）
+- **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、配色包、界面语言、智能缩放、热键等）
 
 ---
 

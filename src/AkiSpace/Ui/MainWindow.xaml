@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:AkiSpace.Ui.Controls"
-        Title="AkiSpace — 桌面分身" Width="1280" Height="800"
+        xmlns:loc="clr-namespace:AkiSpace.Common"
+        Title="{loc:Loc Main_Title}" Width="1280" Height="800"
         MinWidth="960" MinHeight="600"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource Brush.BgBase}"
@@ -22,70 +23,70 @@
                     BorderBrush="{DynamicResource Brush.GlassBorder}" BorderThickness="0,0,0,1"
                     Padding="16,8">
                 <StackPanel Orientation="Horizontal">
-                    <Button x:Name="BtnConnect" AutomationProperties.Name="连接" Style="{StaticResource Btn.Primary}"
+                    <Button x:Name="BtnConnect" AutomationProperties.Name="{loc:Loc Main_Connect}" Style="{StaticResource Btn.Primary}"
                             MinWidth="96" Click="OnConnect">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M8,5 L8,3.5 A4.5,4.5 0 0,1 17,3.5 L17,5 M5.5,5 L19.5,5 A2,2 0 0,1 21.5,7 L21.5,19 A2,2 0 0,1 19.5,21 L5.5,21 A2,2 0 0,1 3.5,19 L3.5,7 A2,2 0 0,1 5.5,5 Z" />
-                            <TextBlock Text="连接" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Connect}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnDisconnect" AutomationProperties.Name="断开" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnDisconnect" AutomationProperties.Name="{loc:Loc Main_Disconnect}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="90" Margin="8,0,0,0" IsEnabled="False" Click="OnDisconnect">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M8,5 L8,3.5 A4.5,4.5 0 0,1 17,3.5 L17,5 M5.5,5 L19.5,5 A2,2 0 0,1 21.5,7 L21.5,19 A2,2 0 0,1 19.5,21 L5.5,21 A2,2 0 0,1 3.5,19 L3.5,7 A2,2 0 0,1 5.5,5 Z M9,9 L16,17 M16,9 L9,17" />
-                            <TextBlock Text="断开" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Disconnect}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnTerminate" AutomationProperties.Name="终止" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnTerminate" AutomationProperties.Name="{loc:Loc Main_Terminate}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="90" Margin="8,0,0,0" IsEnabled="False" Click="OnTerminate">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M18,6 L6,18 M6,6 L18,18" />
-                            <TextBlock Text="终止" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Terminate}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnGameMouse" AutomationProperties.Name="游戏鼠标" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnGameMouse" AutomationProperties.Name="{loc:Loc Main_GameMouse}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="100" Margin="8,0,0,0" Visibility="Collapsed" IsEnabled="False"
                             Click="OnGameMouse">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M12,2 L12,9 M6.5,2.8 A8,8 0 0,1 12,1 A8,8 0 0,1 17.5,2.8 M6.5,2.8 A8,8 0 0,0 6.5,21.2 L17.5,21.2 A8,8 0 0,0 17.5,2.8" />
-                            <TextBlock x:Name="GameMouseText" Text="游戏鼠标" VerticalAlignment="Center" />
+                            <TextBlock x:Name="GameMouseText" Text="{loc:Loc Main_GameMouse}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnLaunch" AutomationProperties.Name="启动程序" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnLaunch" AutomationProperties.Name="{loc:Loc Main_Launch}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="100" Margin="8,0,0,0" IsEnabled="False" Click="OnLaunch">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M6,3 L20,12 L6,21 Z" />
-                            <TextBlock Text="启动程序" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Launch}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnScreenshot" AutomationProperties.Name="截屏" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnScreenshot" AutomationProperties.Name="{loc:Loc Main_Capture}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="84" Margin="8,0,0,0" IsEnabled="False" Click="OnScreenshot"
-                            ToolTip="截取分身画面并复制到剪贴板 (Ctrl+Shift+S)">
+                            ToolTip="{loc:Loc Main_CaptureTip}">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M4,8 L8,8 L10,5 L14,5 L16,8 L20,8 A1.5,1.5 0 0,1 21.5,9.5 L21.5,18 A1.5,1.5 0 0,1 20,19.5 L4,19.5 A1.5,1.5 0 0,1 2.5,18 L2.5,9.5 A1.5,1.5 0 0,1 4,8 Z M12,9.8 A3.7,3.7 0 1,0 12,17.2 A3.7,3.7 0 1,0 12,9.8 Z" />
-                            <TextBlock Text="截屏" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Capture}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnSetup" AutomationProperties.Name="环境检查" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnSetup" AutomationProperties.Name="{loc:Loc Main_EnvCheck}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="100" Margin="8,0,0,0" Click="OnSetup">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M12,2 L13.8,6.2 L18.2,4.6 L17.8,9.2 L22,11 L17.8,12.8 L18.2,17.4 L13.8,15.8 L12,20 L10.2,15.8 L5.8,17.4 L6.2,12.8 L2,11 L6.2,9.2 L5.8,4.6 L10.2,6.2 Z" />
-                            <TextBlock Text="环境检查" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_EnvCheck}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
-                    <Button x:Name="BtnSettings" AutomationProperties.Name="设置" Style="{StaticResource Btn.Ghost}"
+                    <Button x:Name="BtnSettings" AutomationProperties.Name="{loc:Loc Main_Settings}" Style="{StaticResource Btn.Ghost}"
                             MinWidth="84" Margin="8,0,0,0" Click="OnSettings">
                         <StackPanel Orientation="Horizontal">
                             <Path Style="{StaticResource BtnIcon}"
                                   Data="M12,15 A3,3 0 1,0 12,9 A3,3 0 1,0 12,15 Z M19.4,15 A1.65,1.65 0 0,0 20,16.7 L20,16.7 A1.65,1.65 0 0,1 19.4,19.2 L17.9,19.9 A1.65,1.65 0 0,1 15.7,19.3 L15.5,18.8 A1.65,1.65 0 0,0 13.9,17.9 L10.1,17.9 A1.65,1.65 0 0,0 8.5,18.8 L8.3,19.3 A1.65,1.65 0 0,1 6.1,19.9 L4.6,19.2 A1.65,1.65 0 0,1 4,16.7 A1.65,1.65 0 0,0 4.6,15 L4.6,15 A1.65,1.65 0 0,0 4,13.3 L4.6,8.3 A1.65,1.65 0 0,1 6.1,4.8 L7.6,4.1 A1.65,1.65 0 0,1 9.8,4.7 L10,5.2 A1.65,1.65 0 0,0 11.6,6.1 L12.4,6.1 A1.65,1.65 0 0,0 14,5.2 L14.2,4.7 A1.65,1.65 0 0,1 16.4,4.1 L17.9,4.8 A1.65,1.65 0 0,1 19.4,8.3 L20,13.3 A1.65,1.65 0 0,1 19.4,15 Z" />
-                            <TextBlock Text="设置" VerticalAlignment="Center" />
+                            <TextBlock Text="{loc:Loc Main_Settings}" VerticalAlignment="Center" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -98,25 +99,25 @@
                         <Ellipse x:Name="DotChildSession" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblChildSession" Style="{StaticResource Text.Secondary}"
-                                   Text="子会话: 检测中" />
+                                   Text="{loc:Loc Main_ChildChecking}" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,32,0">
                         <Ellipse x:Name="DotConnection" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblConnection" Style="{StaticResource Text.Secondary}"
-                                   Text="连接: 未连接" />
+                                   Text="{loc:Loc Main_ConnInitial}" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,32,0">
                         <Ellipse x:Name="DotWrapper" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
                         <TextBlock x:Name="LblWrapper" Style="{StaticResource Text.Secondary}"
-                                   Text="RDP 解锁: 检测中" />
+                                   Text="{loc:Loc Main_WrapChecking}" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal">
                         <Ellipse x:Name="DotPerformance" Width="7" Height="7" Margin="0,0,8,0"
                                  VerticalAlignment="Center" Fill="{DynamicResource Brush.GradB}" />
                         <TextBlock x:Name="LblPerformance" Style="{StaticResource Text.Secondary}"
-                                   Text="CPU: 0% | 内存: 0 MB" />
+                                   Text="{loc:Loc Main_PerfInitial}" />
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -158,10 +159,10 @@
                                   Canvas.Left="48" Canvas.Top="24" Opacity="0.5" />
                         </Canvas>
                         <TextBlock HorizontalAlignment="Center" Margin="0,16,0,0" FontSize="15"
-                                   Style="{StaticResource Text.Secondary}" Text="分身桌面未连接" />
+                                   Style="{StaticResource Text.Secondary}" Text="{loc:Loc Main_EmptyTitle}" />
                         <TextBlock HorizontalAlignment="Center" Margin="0,6,0,0"
                                    Style="{StaticResource Text.Tertiary}"
-                                   Text="点击工具栏「连接」建立分身会话；连接后可用 Ctrl+Shift+S 一键截屏" />
+                                   Text="{loc:Loc Main_EmptyHint}" />
                     </StackPanel>
                 </Grid>
             </Grid>
@@ -172,7 +173,7 @@
                     Padding="16,5">
                 <DockPanel LastChildFill="False">
                     <TextBlock x:Name="StatusText" DockPanel.Dock="Left" Style="{StaticResource Text.Secondary}"
-                               Text="就绪" />
+                               Text="{loc:Loc Main_Ready}" />
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                         <TextBlock x:Name="TxtVersion" Style="{StaticResource Text.Tertiary}"
                                    VerticalAlignment="Center" Text="v0.0.0" />

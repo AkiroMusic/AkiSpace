@@ -17,6 +17,12 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Resolve the persisted language before anything is shown, so even the
+        // single-instance notice honors it. English is the default; the catalog is
+        // a static table so this pre-WPF read is safe.
+        Loc.Initialize(new SettingsService(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SettingsService>.Instance));
+
         // --fix-env [--disable-wrapper]: re-launched elevated to apply environment fixes.
         if (args.Length > 0 && args[0].Equals("--fix-env", StringComparison.OrdinalIgnoreCase))
         {
@@ -37,7 +43,7 @@ static class Program
         using var mutex = new System.Threading.Mutex(true, @"Global\AkiSpace_SingleInstance", out var createdNew);
         if (!createdNew)
         {
-            MessageBox.Show("AkiSpace 已经在运行中。", "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(Loc.T("App_AlreadyRunning"), "AkiSpace", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -62,6 +68,9 @@ static class Program
             var settingsService = provider.GetRequiredService<SettingsService>();
             var themeManager = ThemeManager.Current;
             themeManager.Initialize(loggerFactory.CreateLogger<ThemeManager>(), settingsService);
+            // Re-initialize Loc against the DI-owned settings instance so language
+            // switches persist through the same service everything else uses.
+            Loc.Initialize(settingsService);
 
             var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
             logger.LogInformation("AkiSpace starting (build {Version})", version);
@@ -96,7 +105,7 @@ static class Program
         {
             logger.LogCritical(ex, "Fatal startup/shutdown error");
             MessageBox.Show(
-                $"AkiSpace 遇到致命错误：\n{ex.Message}\n\n详细信息见日志。",
+                Loc.F("App_Fatal", ex.Message),
                 "AkiSpace",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
@@ -111,9 +120,9 @@ static class Program
     {
         // Allocate a console for visible output
         AllocConsole();
-        Console.Title = "AkiSpace — 环境修复（管理员）";
+        Console.Title = Loc.T("FixEnv_Title");
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine("=== AkiSpace 环境修复（管理员权限）===");
+        Console.WriteLine(Loc.T("FixEnv_Banner"));
         Console.ResetColor();
         Console.WriteLine();
 
@@ -137,11 +146,14 @@ static class Program
         services.AddSingleton<EnvironmentVerifier>();
         using var provider = services.BuildServiceProvider();
 
+        // The fix console localizes through the same persisted Language setting.
+        Loc.Initialize(provider.GetRequiredService<SettingsService>());
+
         var logger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("AkiSpace.FixEnv");
 
         var verifier = provider.GetRequiredService<EnvironmentVerifier>();
 
-        Console.WriteLine("正在应用环境修复...");
+        Console.WriteLine(Loc.T("FixEnv_Applying"));
         Console.WriteLine();
 
         var results = verifier.ApplyAllFixes(alsoDisableWrapper);
@@ -160,16 +172,16 @@ static class Program
         if (failures == 0)
         {
             Console.ForegroundColor = ConsoleColor.Green;
-            Console.WriteLine("所有修复已成功应用！");
+            Console.WriteLine(Loc.T("FixEnv_AllOk"));
         }
         else
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"{failures} 项修复失败，请检查上方详情。");
+            Console.WriteLine(Loc.F("FixEnv_SomeFailed", failures));
         }
         Console.ResetColor();
         Console.WriteLine();
-        Console.WriteLine("按任意键退出...");
+        Console.WriteLine(Loc.T("FixEnv_PressKey"));
         Console.ReadKey(true);
 
         // Non-zero exit code when any fix failed, so callers/scripts can detect.

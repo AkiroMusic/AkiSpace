@@ -3,7 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:AkiSpace.Ui"
         xmlns:ui="clr-namespace:AkiSpace.Ui.Controls"
-        Title="设置" Width="580" Height="720"
+        xmlns:loc="clr-namespace:AkiSpace.Common"
+        Title="{loc:Loc Set_Title}" Width="580" Height="720"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource Brush.BgBase}">
     <Grid>
@@ -21,8 +22,8 @@
                     <!-- 连接配置 -->
                     <ui:GlassCard Margin="0,0,0,24">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="连接配置" />
-                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="分身桌面的连接参数与模式"
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Set_ConnCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Set_ConnSub}"
                                        Margin="0,2,0,0" />
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
@@ -38,42 +39,42 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="连接模式" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Mode}" />
                                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
                                     <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
-                                                 Content="标准 RDP (不同用户)" GroupName="ConnMode" IsChecked="True" />
+                                                 Content="{loc:Loc Set_ModeStandard}" GroupName="ConnMode" IsChecked="True" />
                                     <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
-                                                 Content="子会话 (同一用户)" GroupName="ConnMode" Margin="8,0,0,0" />
+                                                 Content="{loc:Loc Set_ModeChild}" GroupName="ConnMode" Margin="8,0,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身桌面宽度" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Width}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumWidth" Minimum="800" Maximum="7680" Increment="160" Width="160" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="像素，建议匹配显示器分辨率" Margin="0,3,0,0" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PxHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身桌面高度" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Height}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumHeight" Minimum="600" Maximum="4320" Increment="120" Width="160" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="像素，建议匹配显示器分辨率" Margin="0,3,0,0" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PxHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel}" Text="颜色深度" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Depth}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumColorDepth" Minimum="8" Maximum="32" Increment="8" Width="120" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="位，32位为真彩色" Margin="0,3,0,0" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_DepthHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel}" Text="RDP 端口" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Port}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumPort" Minimum="1" Maximum="65535" Increment="1" Width="160" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="默认 3389，仅当你在系统层面改过 RDP 监听端口时同步修改" TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PortHint}" TextWrapping="Wrap" Margin="0,3,0,0" />
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,14,0,0">
-                                    <CheckBox x:Name="ChkSmartSizing" Style="{StaticResource Input.CheckBox}" Content="缩放适应窗口 (Smart Sizing)" />
-                                    <CheckBox x:Name="ChkShortcuts" Style="{StaticResource Input.CheckBox}" Content="系统快捷键发送到分身" Margin="0,9,0,0" />
-                                    <CheckBox x:Name="ChkAudio" Style="{StaticResource Input.CheckBox}" Content="音频重定向到本机" Margin="0,9,0,0" />
+                                    <CheckBox x:Name="ChkSmartSizing" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkSmart}" />
+                                    <CheckBox x:Name="ChkShortcuts" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkShortcuts}" Margin="0,9,0,0" />
+                                    <CheckBox x:Name="ChkAudio" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkAudio}" Margin="0,9,0,0" />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
@@ -82,16 +83,16 @@
                     <!-- 行为设置 -->
                     <ui:GlassCard Margin="0,0,0,24">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="行为设置" />
-                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="启动、托盘、热键与性能监控"
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Set_BehaviorCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Set_BehaviorSub}"
                                        Margin="0,2,0,0" />
                             <StackPanel Margin="0,16,0,0">
-                                <CheckBox x:Name="ChkAutoConnect" Style="{StaticResource Input.CheckBox}" Content="启动时自动连接分身" />
-                                <CheckBox x:Name="ChkLogoff" Style="{StaticResource Input.CheckBox}" Content="退出时终止子会话" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkMinimizeTray" Style="{StaticResource Input.CheckBox}" Content="最小化到系统托盘" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkPerformance" Style="{StaticResource Input.CheckBox}" Content="状态栏显示性能监控 (CPU/内存)" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkHotkeys" Style="{StaticResource Input.CheckBox}" Content="启用全局热键 (Ctrl+Shift+D 切换连接, Ctrl+Alt+Space 显示窗口)" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkGameMouse" Style="{StaticResource Input.CheckBox}" Content="启用游戏鼠标模式（仅标准 RDP，需回放 Agent）" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkAutoConnect" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkAutoConnect}" />
+                                <CheckBox x:Name="ChkLogoff" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkLogoff}" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkMinimizeTray" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkTray}" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkPerformance" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkPerf}" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkHotkeys" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkHotkeys}" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkGameMouse" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkGameMouse}" Margin="0,9,0,0" />
                             </StackPanel>
                         </StackPanel>
                     </ui:GlassCard>
@@ -99,8 +100,8 @@
                     <!-- 分身账户 -->
                     <ui:GlassCard Margin="0,0,0,24">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="分身账户" />
-                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="标准 RDP 模式下的登录凭据"
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Set_AccountCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Set_AccountSub}"
                                        Margin="0,2,0,0" />
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
@@ -111,50 +112,63 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身账户用户名" Margin="0,0,16,9" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Username}" Margin="0,0,16,9" />
                                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,9">
                                     <TextBox x:Name="TxtUsername" Style="{StaticResource Input.TextBox}" Width="260" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="标准 RDP 模式必填，如 AkiSpaceUser" Margin="0,3,0,0" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_UsernameHint}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="分身账户密码" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Password}" />
                                 <StackPanel Grid.Row="1" Grid.Column="1">
                                     <PasswordBox x:Name="PbPassword" Style="{StaticResource Input.PasswordBox}" Width="260" HorizontalAlignment="Left" />
-                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="留空保持现有密码不变；密码使用 DPAPI 加密存储" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PasswordHint}" Margin="0,3,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Grid>
                         </StackPanel>
                     </ui:GlassCard>
 
-                    <!-- 外观 -->
+                    <!-- 外观（语言 + 配色包） -->
                     <ui:GlassCard Margin="0,0,0,24">
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="外观" />
-                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="Aurora Glass 配色包 — 两套深色、两套浅色，切换即时预览"
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Set_LookCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Set_LookSub}"
                                        Margin="0,2,0,0" />
-                            <StackPanel Margin="0,16,0,0">
+
+                            <TextBlock Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Language}" Margin="0,16,0,0" />
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <RadioButton x:Name="RdoLangEn" Style="{StaticResource Input.Radio}" MinWidth="150"
+                                             Content="English" Tag="en" GroupName="Language" Checked="OnLanguagePreview" />
+                                <RadioButton x:Name="RdoLangZh" Style="{StaticResource Input.Radio}" MinWidth="150"
+                                             Content="中文" Tag="zh" GroupName="Language" Margin="8,0,0,0" Checked="OnLanguagePreview" />
+                            </StackPanel>
+                            <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_LanguageHint}"
+                                       Margin="0,3,0,0" />
+
+                            <Border Height="1" Background="{DynamicResource Brush.Hairline}" Margin="0,16,0,0" />
+                            <TextBlock Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Theme}" Margin="0,16,0,0" />
+                            <StackPanel Margin="0,8,0,0">
                                 <StackPanel Orientation="Horizontal">
                                     <RadioButton x:Name="RdoThemeDark" Style="{StaticResource Input.Radio}" MinWidth="150"
-                                                 Content="极光暮色 (深)" Tag="dark" GroupName="ThemePack" Checked="OnThemePreview" />
+                                                 Content="{loc:Loc Set_ThemeDark}" Tag="dark" GroupName="ThemePack" Checked="OnThemePreview" />
                                     <RadioButton x:Name="RdoThemeAmber" Style="{StaticResource Input.Radio}" MinWidth="150"
-                                                 Content="琥珀霞光 (深)" Tag="amber" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
+                                                 Content="{loc:Loc Set_ThemeAmber}" Tag="amber" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                     <RadioButton x:Name="RdoThemeMint" Style="{StaticResource Input.Radio}" MinWidth="150"
-                                                 Content="薄荷清新 (浅)" Tag="mint" GroupName="ThemePack" Checked="OnThemePreview" />
+                                                 Content="{loc:Loc Set_ThemeMint}" Tag="mint" GroupName="ThemePack" Checked="OnThemePreview" />
                                     <RadioButton x:Name="RdoThemePearl" Style="{StaticResource Input.Radio}" MinWidth="150"
-                                                 Content="珍珠雾粉 (浅)" Tag="pearl" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
+                                                 Content="{loc:Loc Set_ThemePearl}" Tag="pearl" GroupName="ThemePack" Margin="8,0,0,0" Checked="OnThemePreview" />
                                 </StackPanel>
                             </StackPanel>
                             <TextBlock Style="{StaticResource Text.Tertiary}" Margin="0,8,0,0"
-                                       Text="取消关闭窗口时恢复原配色；保存后写入设置" />
+                                       Text="{loc:Loc Set_ThemeHint}" />
                         </StackPanel>
                     </ui:GlassCard>
 
                     <!-- 自动启动 -->
                     <ui:GlassCard>
                         <StackPanel>
-                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="自动启动" />
-                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="连接成功后在分身中启动程序"
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Set_AutoCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Set_AutoSub}"
                                        Margin="0,2,0,0" />
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
@@ -162,10 +176,10 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="连接后自动启动" />
+                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_AutoPath}" />
                                 <TextBox x:Name="TxtLaunchPath" Grid.Column="1" Style="{StaticResource Input.TextBox}" VerticalAlignment="Center" />
                                 <Button x:Name="BtnBrowse" Grid.Column="2" Style="{StaticResource Btn.Ghost}"
-                                        Content="浏览..." Margin="8,0,0,0" Click="OnBrowse" />
+                                        Content="{loc:Loc Set_Browse}" Margin="8,0,0,0" Click="OnBrowse" />
                             </Grid>
                         </StackPanel>
                     </ui:GlassCard>
@@ -178,9 +192,9 @@
                     BorderBrush="{DynamicResource Brush.GlassBorder}" BorderThickness="0,1,0,0"
                     Padding="24,12">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="BtnCancel" Content="取消" Style="{StaticResource Btn.Ghost}" MinWidth="90"
+                    <Button x:Name="BtnCancel" Content="{loc:Loc Set_Cancel}" Style="{StaticResource Btn.Ghost}" MinWidth="90"
                             Click="OnCancel" IsCancel="True" />
-                    <Button x:Name="BtnSave" Content="保存" Style="{StaticResource Btn.Primary}" MinWidth="100"
+                    <Button x:Name="BtnSave" Content="{loc:Loc Set_Save}" Style="{StaticResource Btn.Primary}" MinWidth="100"
                             Margin="10,0,0,0" Click="OnSave" IsDefault="True" />
                 </StackPanel>
             </Border>

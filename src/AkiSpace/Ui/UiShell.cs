@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using AkiSpace.App;
+using AkiSpace.Common;
 using AkiSpace.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -68,6 +69,14 @@ internal sealed class UiShell
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statusTimer.Tick += (_, _) => _controller.RefreshStatus();
+
+        // A language switch re-renders XAML bindings automatically, but the
+        // controller-emitted status strings are snapshots — re-emit them.
+        Loc.LanguageChanged += () => dispatcher.Invoke(() =>
+        {
+            _controller.RefreshTexts();
+            _controller.RefreshStatus();
+        });
 
         TrySetWindowIcon(Main);
 

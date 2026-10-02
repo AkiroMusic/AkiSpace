@@ -31,6 +31,15 @@ public partial class SettingsWindow : ChromeWindow
         }
     }
 
+    /// <summary>Live preview: switches the whole interface immediately without persisting.</summary>
+    private void OnLanguagePreview(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.RadioButton { Tag: string language })
+        {
+            Loc.SetLanguage(language, persist: false);
+        }
+    }
+
     private void LoadSettings()
     {
         var s = _settingsService.Current;
@@ -53,9 +62,12 @@ public partial class SettingsWindow : ChromeWindow
         TxtLaunchPath.Text = s.LaunchProgramPath ?? string.Empty;
         _originalTheme = s.Theme;
         SelectThemeRadio(s.Theme);
+        _originalLanguage = s.Language;
+        (s.Language == Loc.Chinese ? RdoLangZh : RdoLangEn).IsChecked = true;
     }
 
     private string _originalTheme = "dark";
+    private string _originalLanguage = Loc.English;
 
     private void SelectThemeRadio(string theme)
     {
@@ -73,8 +85,8 @@ public partial class SettingsWindow : ChromeWindow
     {
         using var ofd = new OpenFileDialog
         {
-            Title = "选择连接后自动启动的程序",
-            Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
+            Title = Loc.T("Set_DlgTitle"),
+            Filter = Loc.T("Set_DlgFilter"),
         };
         if (ofd.ShowDialog() == WinFormsDialogResult.OK)
             TxtLaunchPath.Text = ofd.FileName;
@@ -112,6 +124,8 @@ public partial class SettingsWindow : ChromeWindow
             : RdoThemeMint.IsChecked == true ? "mint"
             : RdoThemePearl.IsChecked == true ? "pearl" : "dark";
         ThemeManager.Current.SetTheme(theme, persist: true);
+        var language = RdoLangZh.IsChecked == true ? Loc.Chinese : Loc.English;
+        Loc.SetLanguage(language, persist: true);
         DialogResult = true;
         Close();
     }
@@ -119,6 +133,7 @@ public partial class SettingsWindow : ChromeWindow
     private void OnCancel(object sender, RoutedEventArgs e)
     {
         ThemeManager.Current.SetTheme(_originalTheme, persist: false);
+        Loc.SetLanguage(_originalLanguage, persist: false);
         DialogResult = false;
         Close();
     }
