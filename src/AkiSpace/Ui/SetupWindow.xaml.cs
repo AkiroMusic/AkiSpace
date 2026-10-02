@@ -53,8 +53,8 @@ public partial class SetupWindow : ChromeWindow
         _settingsService = settingsService;
 
         var termsrvVer = _sessionManager.GetTermsrvVersion();
-        LblTermsrvVersion.Text =
-            $"本机 termsrv.dll 版本:  {termsrvVer}    （在 rdpwrap.ini 中需找到 [10.0.{termsrvVer.Split('.')[2]}.xxxx] 段落）";
+        var verParts = termsrvVer.Split('.');
+        LblTermsrvVersion.Text = Loc.F("Env_Termsrv", termsrvVer, verParts.Length > 2 ? verParts[2] : "?");
 
         _ = RunChecksAsync();
     }
@@ -78,7 +78,7 @@ public partial class SetupWindow : ChromeWindow
     {
         ChecksList.ItemsSource = new List<CheckRow>
         {
-            new("正在检查环境…", "…", "RDP 监听探测可能需要数秒，请稍候", ThemeBrush(WpfThemeHost.TextTertiary)),
+            new(Loc.T("Env_Placeholder"), "…", Loc.T("Env_PlaceholderDetail"), ThemeBrush(WpfThemeHost.TextTertiary)),
         };
     }
 
@@ -86,7 +86,7 @@ public partial class SetupWindow : ChromeWindow
     {
         ChecksList.ItemsSource = new List<CheckRow>
         {
-            new("环境检查", "✗ 错误", $"检查失败：{ex.Message}", ThemeBrush(WpfThemeHost.Error)),
+            new(Loc.T("Env_CheckCard"), Loc.T("Env_Error"), Loc.F("Env_CheckFailed", ex.Message), ThemeBrush(WpfThemeHost.Error)),
         };
     }
 
@@ -103,10 +103,10 @@ public partial class SetupWindow : ChromeWindow
         {
             rows.Add(new CheckRow(
                 check.Name,
-                check.Pass ? "✓ 通过" : "✗ 失败",
+                check.Pass ? Loc.T("Env_Pass") : Loc.T("Env_Fail"),
                 check.Detail,
                 check.Pass ? PassBrush() : FailBrush()));
-            if (check.Name.StartsWith("多会话解锁") && !check.Pass)
+            if (check.Id == "WrapperUnlock" && !check.Pass)
                 wrapperInstallFailed = true;
         }
         ChecksList.ItemsSource = rows;
@@ -129,35 +129,7 @@ public partial class SetupWindow : ChromeWindow
     private void OnFix(object sender, RoutedEventArgs e)
     {
         var isChildMode = _settingsService.Current.ConnectionMode == ConnectionMode.ChildSession;
-
-        var prompt = isChildMode
-            ? "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n\n" +
-              "  ✓ 禁用 RDP Wrapper (TermWrap.dll)\n" +
-              "  ✓ 启用 RDP（fDenyTSConnections=0）\n" +
-              "  ✓ 允许多会话（fSingleSessionPerUser=0）\n" +
-              "  ✓ 设置 StartRCM=1（家庭版修复）\n" +
-              "  ✓ 安全加固（TLS + 高加密 + NLA）\n" +
-              "  ✓ 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
-              "  ✓ 防火墙阻断 3389 公网入站（删除默认 RDP 公开 allow）\n" +
-              "  ✓ 重启 TermService 服务（会踢掉现有 RDP 会话）\n" +
-              "  ✓ 启用子会话\n\n" +
-              "RDP Wrapper 与子会话模式互斥（BetterGI 官方文档已说明），\n" +
-              "本工具将禁用 TermWrap 并恢复原生 termsrv.dll 以启用子会话。\n\n" +
-              "注意：RDP Wrapper 本身（rdpwrap.dll）需按本对话框顶部的指引手动安装。\n\n" +
-              "是否继续？"
-            : "将执行以下操作（需要管理员权限，会弹出 UAC 提示）：\n\n" +
-              "  ✗ 保留 RDP Wrapper hook（标准 RDP 模式必需）\n" +
-              "  ✓ 启用 RDP（fDenyTSConnections=0）\n" +
-              "  ✓ 允许多会话（fSingleSessionPerUser=0）\n" +
-              "  ✓ 设置 StartRCM=1（家庭版修复）\n" +
-              "  ✓ 安全加固（TLS + 高加密 + NLA）\n" +
-              "  ✓ 添加防火墙回环规则（RDP 仅允许 127.0.0.1）\n" +
-              "  ✓ 防火墙阻断 3389 公网入站（删除默认 RDP 公开 allow）\n" +
-              "  ✓ 重启 TermService 服务（会踢掉现有 RDP 会话）\n\n" +
-              "注意：RDP Wrapper 本身（rdpwrap.dll）需按本对话框顶部的指引手动安装。\n" +
-              "如果你想在标准 RDP 模式下也禁用 TermWrap，请先在「设置」中切换到「子会话」模式，\n" +
-              "或勾选下方的「同时禁用 TermWrap」选项。\n\n" +
-              "是否继续？";
+        var prompt = Loc.T(isChildMode ? "Env_FixPromptChild" : "Env_FixPromptStandard");
 
         var confirm = new FixConfirmWindow(prompt, showOverrideOption: !isChildMode) { Owner = this };
         if (confirm.ShowDialog() != true) return;
@@ -168,7 +140,7 @@ public partial class SetupWindow : ChromeWindow
             var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
             if (exePath == null)
             {
-                MessageBox.Show("无法获取程序路径。", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.T("Env_NoExePath"), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
@@ -184,16 +156,16 @@ public partial class SetupWindow : ChromeWindow
         {
             if (ex.NativeErrorCode == 1223)
             {
-                MessageBox.Show("已取消管理员权限，修复未执行。", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(Loc.T("Env_UacCancelled"), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(Loc.F("Env_LaunchFail", ex.Message), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"启动管理员进程失败：{ex.Message}", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.F("Env_LaunchFail", ex.Message), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -210,29 +182,30 @@ public partial class SetupWindow : ChromeWindow
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"无法打开链接：{ex.Message}\n请手动访问：{url}", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Loc.F("Env_OpenUrlFail", ex.Message, url), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
     private void OnCopyVersion(object sender, RoutedEventArgs e) =>
-        CopyToClipboard(_sessionManager.GetTermsrvVersion(), "已复制 termsrv.dll 版本号");
+        CopyToClipboard(_sessionManager.GetTermsrvVersion(), Loc.T("Env_CopiedVersion"));
 
     private void OnCopyDiagnostics(object sender, RoutedEventArgs e)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("## AkiSpace 诊断信息");
+        sb.AppendLine(Loc.T("Diag_Header"));
         sb.AppendLine();
-        sb.AppendLine($"- 时间：{DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        sb.AppendLine($"- 系统：{Environment.OSVersion}");
-        sb.AppendLine($"- 进程：{(Environment.Is64BitProcess ? "x64" : "x86")} {(Environment.Is64BitOperatingSystem ? "64-bit OS" : "32-bit OS")}");
+        sb.AppendLine(Loc.F("Diag_Time", $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}"));
+        sb.AppendLine(Loc.F("Diag_Os", Environment.OSVersion.ToString()));
+        sb.AppendLine(Loc.F("Diag_Proc", Environment.Is64BitProcess ? "x64" : "x86",
+            Environment.Is64BitOperatingSystem ? "64-bit OS" : "32-bit OS"));
         sb.AppendLine();
-        sb.AppendLine("### 环境检查结果");
+        sb.AppendLine(Loc.T("Diag_Section"));
         foreach (var c in _verifier.RunAllChecks())
         {
             var icon = c.Pass ? "✓" : "✗";
             sb.AppendLine($"- {icon} **{c.Name}** — {c.Detail}");
         }
-        CopyToClipboard(sb.ToString(), "诊断信息已复制（可粘贴到 GitHub issue）");
+        CopyToClipboard(sb.ToString(), Loc.T("Env_CopiedDiag"));
     }
 
     private static void CopyToClipboard(string text, string successMessage)
@@ -241,7 +214,7 @@ public partial class SetupWindow : ChromeWindow
         {
             if (string.IsNullOrEmpty(text))
             {
-                MessageBox.Show("无内容可复制。", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("Env_NothingToCopy"), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             for (var attempt = 0; attempt < 3; attempt++)
@@ -253,7 +226,7 @@ public partial class SetupWindow : ChromeWindow
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"复制失败：{ex.Message}", "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Loc.F("Env_CopyFail", ex.Message), "AkiSpace", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 }
@@ -265,7 +238,7 @@ public class FixConfirmWindow : ChromeWindow
 
     public FixConfirmWindow(string prompt, bool showOverrideOption)
     {
-        Title = "AkiSpace 环境修复";
+        Title = Loc.T("Env_FixTitle");
         Width = 560;
         SizeToContent = SizeToContent.Height;
         MaxHeight = 640;
@@ -285,14 +258,14 @@ public class FixConfirmWindow : ChromeWindow
 
         var chk = new CheckBox
         {
-            Content = "同时禁用 TermWrap（覆盖默认行为）",
+            Content = Loc.T("Env_FixOverride"),
             Style = (Style)Application.Current.TryFindResource("Input.CheckBox")!,
             Visibility = showOverrideOption ? Visibility.Visible : Visibility.Collapsed,
             Margin = new Thickness(0, 0, 0, 16),
         };
 
-        var btnOk = new Button { Content = "继续", Style = (Style)Application.Current.TryFindResource("Btn.Primary")!, MinWidth = 100 };
-        var btnCancel = new Button { Content = "取消", Style = (Style)Application.Current.TryFindResource("Btn.Ghost")!, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
+        var btnOk = new Button { Content = Loc.T("Env_Continue"), Style = (Style)Application.Current.TryFindResource("Btn.Primary")!, MinWidth = 100 };
+        var btnCancel = new Button { Content = Loc.T("Set_Cancel"), Style = (Style)Application.Current.TryFindResource("Btn.Ghost")!, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
         btnOk.IsDefault = true;
         btnCancel.IsCancel = true;
 

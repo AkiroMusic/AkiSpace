@@ -6,8 +6,12 @@ using Microsoft.Win32;
 
 namespace AkiSpace.Services;
 
-/// <summary>Result of one environment check.</summary>
-public sealed record EnvCheckResult(string Name, bool Pass, string Detail);
+/// <summary>
+/// Result of one environment check. <paramref name="Id"/> is a stable machine-readable
+/// identifier (never localized) used by callers for logic; Name/Detail are display
+/// strings resolved through <see cref="Loc"/> at check time.
+/// </summary>
+public sealed record EnvCheckResult(string Id, string Name, bool Pass, string Detail);
 
 /// <summary>
 /// One-click environment setup & verification for the desktop-clone feature:
@@ -83,28 +87,31 @@ public sealed class EnvironmentVerifier
     {
         var value = ReadDword(TerminalServerKey, RegistryKeys.FDenyTSConnections);
         var pass = value == 0;
-        return new("RDP 已启用 (fDenyTSConnections)", pass, pass ? "fDenyTSConnections = 0" : $"fDenyTSConnections = {value}（应为 0）");
+        return new("RdpEnabled", Loc.T("Chk_RdpEnabled"), pass,
+            pass ? "fDenyTSConnections = 0" : Loc.F("Chk_RdpEnabledBad", value));
     }
 
     public EnvCheckResult CheckMultiSession()
     {
         var value = ReadDword(TerminalServerKey, RegistryKeys.FSingleSessionPerUser);
         var pass = value == 0;
-        return new("允许多会话 (fSingleSessionPerUser)", pass, pass ? "fSingleSessionPerUser = 0" : $"fSingleSessionPerUser = {value}（应为 0）");
+        return new("MultiSession", Loc.T("Chk_MultiSession"), pass,
+            pass ? "fSingleSessionPerUser = 0" : Loc.F("Chk_MultiSessionBad", value));
     }
 
     public EnvCheckResult CheckRdpWrapper()
     {
         var installed = _sessionManager.IsRdpWrapperInstalled();
-        return new("多会话解锁 (TermWrap/rdpwrap)", installed,
-            installed ? "检测到 RDP 解锁层（TermWrap.dll 或 rdpwrap.dll）" : "未检测到 RDP 解锁层（家庭版需要）");
+        return new("WrapperUnlock", Loc.T("Chk_WrapperUnlock"), installed,
+            installed ? Loc.T("Chk_WrapperFound") : Loc.T("Chk_WrapperMissing"));
     }
 
     public EnvCheckResult CheckStartRcm()
     {
         var value = ReadDword(RdpTcpKey, RegistryKeys.StartRCM);
         var pass = value == 1;
-        return new("StartRCM（家庭版修复）", pass, pass ? "StartRCM = 1" : $"StartRCM = {value}（应为 1）");
+        return new("StartRcm", Loc.T("Chk_StartRcm"), pass,
+            pass ? "StartRCM = 1" : Loc.F("Chk_StartRcmBad", value));
     }
 
     public EnvCheckResult CheckTermServiceRunning()
@@ -113,11 +120,12 @@ public sealed class EnvironmentVerifier
         {
             using var sc = new System.ServiceProcess.ServiceController("TermService");
             var running = sc.Status == System.ServiceProcess.ServiceControllerStatus.Running;
-            return new("TermService 服务", running, running ? "正在运行" : $"状态：{sc.Status}");
+            return new("TermService", Loc.T("Chk_TermService"), running,
+                running ? Loc.T("Chk_TermRunning") : Loc.F("Chk_TermStatus", sc.Status));
         }
         catch (Exception ex)
         {
-            return new("TermService 服务", false, $"检查失败：{ex.Message}");
+            return new("TermService", Loc.T("Chk_TermService"), false, Loc.F("Env_CheckFailed", ex.Message));
         }
     }
 
@@ -132,9 +140,9 @@ public sealed class EnvironmentVerifier
         var publicRuleFound = FirewallRuleExists("Remote Desktop - User Mode (TCP-In)");
         var allOk = blockFound && !publicRuleFound;
         var detail = allOk
-            ? "公网 block 规则就位，默认公开规则已删除（回环经防火墙旁路仍可达）"
-            : $"block={blockFound}, 公开规则残留={publicRuleFound}";
-        return new("防火墙回环规则 (RDP 仅本机)", allOk, detail);
+            ? Loc.T("Chk_FirewallOk")
+            : Loc.F("Chk_FirewallBad", blockFound, publicRuleFound);
+        return new("FirewallLoopback", Loc.T("Chk_Firewall"), allOk, detail);
     }
 
     public EnvCheckResult CheckChildSessions()
@@ -142,22 +150,22 @@ public sealed class EnvironmentVerifier
         var enabled = _sessionManager.IsChildSessionsEnabled();
         var id = _sessionManager.TryGetChildSessionId();
         var detail = enabled
-            ? (id.HasValue ? $"已启用，当前子会话 ID = {id.Value}" : "已启用，暂无活动子会话")
-            : "未启用（需要 WTSEnableChildSessions）";
-        return new("子会话 (Child Sessions)", enabled, detail);
+            ? (id.HasValue ? Loc.F("Chk_ChildEnabledActive", id.Value) : Loc.T("Chk_ChildEnabledIdle"))
+            : Loc.T("Chk_ChildDisabled");
+        return new("ChildSessions", Loc.T("Chk_ChildSessions"), enabled, detail);
     }
 
     public EnvCheckResult CheckRdpListener()
     {
         var active = _sessionManager.IsRdpListenerActive();
-        return new("RDP 监听端口", active,
-            active ? $"端口 {_sessionManager.GetConfiguredRdpPort()} 正在监听" : "监听失败（TermService 未运行或未解锁）");
+        return new("Listener", Loc.T("Chk_Listener"), active,
+            active ? Loc.F("Chk_ListenerOk", _sessionManager.GetConfiguredRdpPort()) : Loc.T("Chk_ListenerBad"));
     }
 
     public EnvCheckResult CheckTermsrvVersion()
     {
         var version = _sessionManager.GetTermsrvVersion();
-        return new("termsrv.dll 版本", version != "unknown", version);
+        return new("TermsrvVersion", Loc.T("Chk_TermsrvVersion"), version != "unknown", version);
     }
 
     // ---- Fixes ----
@@ -178,13 +186,13 @@ public sealed class EnvironmentVerifier
         if (shouldDisableWrapper)
         {
             var disableWrapOk = DisableRdpWrapperHook();
-            results.Add(new("禁用 RDP Wrapper (TermWrap.dll)", disableWrapOk,
-                disableWrapOk ? "TermService ServiceDll 已恢复为 %SystemRoot%\\System32\\termsrv.dll" : "无需禁用或失败"));
+            results.Add(new("FixDisableWrapper", Loc.T("Fx_DisableWrapper"), disableWrapOk,
+                disableWrapOk ? "TermService ServiceDll -> %SystemRoot%\\System32\\termsrv.dll" : Loc.T("Fx_DisableWrapperFail")));
         }
         else
         {
-            results.Add(new("保留 RDP Wrapper hook", true,
-                "当前为标准 RDP 模式，TermWrap.dll 是多会话解锁层，跳过禁用"));
+            results.Add(new("FixKeepWrapper", Loc.T("Fx_KeepWrapper"), true,
+                Loc.T("Fx_KeepWrapperDetail")));
         }
 
         // fDenyTSConnections = 0 (enable RDP)
@@ -203,21 +211,24 @@ public sealed class EnvironmentVerifier
         SetDword(RdpTcpKey, RegistryKeys.SecurityLayer, 2);      // SSL/TLS
         SetDword(RdpTcpKey, RegistryKeys.MinEncryptionLevel, 3); // High
         SetDword(RdpTcpKey, RegistryKeys.UserAuthentication, 1); // NLA
-        results.Add(new("安全加固 (SecurityLayer/MinEncryptionLevel/NLA)", true, "SecurityLayer=2, MinEncryptionLevel=3, UserAuthentication=1"));
+        results.Add(new("FixSecurity", Loc.T("Fx_Security"), true, "SecurityLayer=2, MinEncryptionLevel=3, UserAuthentication=1"));
 
         // Firewall loopback rule
         var ruleOk = EnsureFirewallLoopbackRule();
-        results.Add(new("防火墙回环规则", ruleOk, ruleOk ? "已添加 AkiSpace RDP Loopback 规则" : "添加失败（需要管理员权限）"));
+        results.Add(new("FixFirewall", Loc.T("Fx_Firewall"), ruleOk,
+            ruleOk ? Loc.T("Fx_FirewallOk") : Loc.T("Fx_FirewallFail")));
 
         // Restart TermService so the new ServiceDll (termsrv.dll instead of TermWrap.dll)
         // is loaded and the child-session broker is reset.
         var restartOk = RestartTermService();
-        results.Add(new("TermService 重启", restartOk, restartOk ? "已重启" : "重启失败"));
+        results.Add(new("FixRestartTermService", Loc.T("Fx_RestartTermService"), restartOk,
+            restartOk ? Loc.T("Fx_RestartOk") : Loc.T("Fx_RestartFail")));
 
         // Enable child sessions (must be called after TermService is back up with
         // the un-hooked termsrv.dll).
         var childOk = _sessionManager.EnableChildSessions();
-        results.Add(new("启用子会话", childOk, childOk ? "WTSEnableChildSessions(true) 成功" : "调用失败"));
+        results.Add(new("FixEnableChildSessions", Loc.T("Fx_EnableChildSessions"), childOk,
+            childOk ? Loc.T("Fx_EnableChildOk") : Loc.T("Fx_EnableChildFail")));
 
         // Re-check the RDP Wrapper hook so the user sees confirmation.
         results.Add(CheckRdpWrapperHook());
@@ -249,20 +260,22 @@ public sealed class EnvironmentVerifier
             if (hooked)
             {
                 return new(
-                    "RDP Wrapper (TermWrap.dll) hook",
+                    "WrapperHook",
+                    Loc.T("Chk_WrapperHook"),
                     false,
-                    $"⚠ TermService ServiceDll = {serviceDll}。RDP Wrapper 与 AkiSpace 子会话不兼容（BetterGI 官方文档明确警告）。请用「环境检查/修复 → 禁用 RDP Wrapper」解决。");
+                    Loc.F("Chk_HookActive", serviceDll));
             }
             return new(
-                "RDP Wrapper (TermWrap.dll) hook",
+                "WrapperHook",
+                Loc.T("Chk_WrapperHook"),
                 true,
                 serviceDll is null
-                    ? "未检测到 ServiceDll"
-                    : $"未检测到 RDP Wrapper hook（{serviceDll}）");
+                    ? Loc.T("Chk_HookNoDll")
+                    : Loc.F("Chk_HookNone", serviceDll));
         }
         catch (Exception ex)
         {
-            return new("RDP Wrapper (TermWrap.dll) hook", false, $"检查失败：{ex.Message}");
+            return new("WrapperHook", Loc.T("Chk_WrapperHook"), false, Loc.F("Env_CheckFailed", ex.Message));
         }
     }
 

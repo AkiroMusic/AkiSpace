@@ -129,7 +129,7 @@ void Check(string name, bool pass, string? detail = null)
         Console.WriteLine($"[ENV] {c.Name}: {(c.Pass ? "PASS" : "FAIL")} — {c.Detail}");
     }
     // On this machine RDP is NOT enabled (Home default) — expect fDenyTSConnections check to FAIL
-    var rdpCheck = checks.First(c => c.Name.Contains("fDenyTSConnections"));
+    var rdpCheck = checks.First(c => c.Id == "RdpEnabled");
     Console.WriteLine($"[INFO] Machine RDP state: {(rdpCheck.Pass ? "enabled" : "disabled (expected on Home default)")}");
 }
 
@@ -402,8 +402,8 @@ void _Wave5Tests()
         settings.Update(s => s.ConnectionMode = AkiSpace.Services.ConnectionMode.StandardRdp);
         var verifier = new AkiSpace.Services.EnvironmentVerifier(nullLogV, mgr, settings);
         var fixResults = verifier.ApplyAllFixes(alsoDisableRdpWrapper: false);
-        var hasPreserve = fixResults.Any(r => r.Name.Contains("保留 RDP Wrapper"));
-        var hasDisable = fixResults.Any(r => r.Name.Contains("禁用 RDP Wrapper"));
+        var hasPreserve = fixResults.Any(r => r.Id == "FixKeepWrapper");
+        var hasDisable = fixResults.Any(r => r.Id == "FixDisableWrapper");
         Check("StandardRdp mode: ApplyAllFixes preserves RDP Wrapper hook", hasPreserve && !hasDisable,
             $"preserve={hasPreserve}, disable={hasDisable}");
         Directory.Delete(dir, true);

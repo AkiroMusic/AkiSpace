@@ -69,6 +69,9 @@ public sealed class AppSettings
 
     /// <summary>Current theme (dark, light, sepia, forest, ocean, lavender).</summary>
     public string Theme { get; set; } = "dark";
+
+    /// <summary>UI language: "en" (default) or "zh".</summary>
+    public string Language { get; set; } = "en";
 }
 
 /// <summary>Connection mode for the desktop clone.</summary>
