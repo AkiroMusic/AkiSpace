@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Forms;
 using AkiSpace.Common;
@@ -126,6 +127,7 @@ public partial class SettingsWindow : ChromeWindow
         ThemeManager.Current.SetTheme(theme, persist: true);
         var language = RdoLangZh.IsChecked == true ? Loc.Chinese : Loc.English;
         Loc.SetLanguage(language, persist: true);
+        _saved = true;
         DialogResult = true;
         Close();
     }
@@ -134,7 +136,22 @@ public partial class SettingsWindow : ChromeWindow
     {
         ThemeManager.Current.SetTheme(_originalTheme, persist: false);
         Loc.SetLanguage(_originalLanguage, persist: false);
+        _saved = true; // already restored — OnClosing must not restore twice
         DialogResult = false;
         Close();
+    }
+
+    private bool _saved;
+
+    /// <summary>Closing via the title-bar X behaves like Cancel: previews (color pack /
+    /// language) applied since opening are reverted, so nothing silently leaks.</summary>
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        if (!_saved)
+        {
+            ThemeManager.Current.SetTheme(_originalTheme, persist: false);
+            Loc.SetLanguage(_originalLanguage, persist: false);
+        }
+        base.OnClosing(e);
     }
 }

@@ -41,6 +41,29 @@ public partial class MainWindow : Window
             var source = (HwndSource)PresentationSource.FromVisual(this)!;
             source.AddHook(WndProcHook);
         };
+
+        UpdateLanguageButton();
+        Loc.LanguageChanged += OnLanguageChangedUi;
+    }
+
+    // ---------------------------------------------------------------- language toggle
+
+    /// <summary>Toolbar top-right toggle: applies the other language AND persists it
+    /// immediately, so the choice survives restart without opening Settings.</summary>
+    private void OnToggleLanguage(object sender, RoutedEventArgs e)
+    {
+        Loc.SetLanguage(Loc.Language == Loc.Chinese ? Loc.English : Loc.Chinese, persist: true);
+    }
+
+    /// <summary>The toggle shows the language you would switch TO, with a matching tooltip.</summary>
+    private void OnLanguageChangedUi() => Dispatcher.Invoke(UpdateLanguageButton);
+
+    private void UpdateLanguageButton()
+    {
+        var toZh = Loc.Language != Loc.Chinese;
+        LanguageText.Text = toZh ? "中文" : "English";
+        BtnLanguage.ToolTip = toZh ? "切换到中文界面" : "Switch to English";
+        System.Windows.Automation.AutomationProperties.SetName(BtnLanguage, toZh ? "切换到中文" : "Switch to English");
     }
 
     private void BindController()
@@ -242,6 +265,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        Loc.LanguageChanged -= OnLanguageChangedUi;
+        _toastTimer?.Stop();
         _controller.ConnectStateChanged -= ApplyConnectState;
         base.OnClosed(e);
     }

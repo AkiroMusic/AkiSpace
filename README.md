@@ -15,7 +15,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **One-click Clone**: Click "Connect" or press `Ctrl+Shift+D` to instantly connect; embedded window shows the clone desktop live
 - **One-click Clone Screenshot**: Toolbar button, tray item or `Ctrl+Shift+S` captures the clone desktop straight to the host clipboard (Bitmap + PNG formats; paste into Paint, Office or chat apps)
 - **Aurora Glass UI**: WPF frontend with four switchable color packs — Aurora Dusk & Amber Afterglow (dark), Mint Fresh & Pearl Blush (light) — live preview in Settings; animated aurora backdrop, liquid-glass cards, smooth scrolling, status dots and toast feedback
-- **Bilingual UI (EN / 中文)**: The entire interface — windows, dialogs, tray menu, status line, messages, even the elevated fix console — switches between English (default) and Chinese instantly from Settings → Appearance, and the choice persists
+- **Bilingual UI (EN / 中文)**: The entire interface — windows, dialogs, tray menu, status line, messages, even the elevated fix console — switches between English (default) and Chinese with **one click on the toolbar's globe button** (top-right; applies and remembers immediately) or via Settings → Appearance; the choice persists
 - **Dual Connection Modes**: Switch between "Standard RDP" (separate account) and "Child Session" (BetterGI-style, same user) in Settings
 - **System Tray**: Minimize to tray; double-click tray icon to restore; right-click menu for connect/screenshot/show/quit
 - **Global Hotkeys**:
@@ -209,7 +209,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **一键连接分身**：点击「连接」或按 `Ctrl+Shift+D` 立即连接，内嵌窗口实时显示分身桌面
 - **一键截屏分身**：工具栏按钮、托盘菜单或 `Ctrl+Shift+S` 把分身桌面直接截取到主系统剪贴板（同时含 Bitmap 与 PNG 两种格式，可粘贴到画图、Office 或聊天工具）
 - **Aurora Glass 界面**：WPF 前端，四套可切换配色包——极光暮色 / 琥珀霞光（深色）、薄荷清新 / 珍珠雾粉（浅色），设置内即时预览；极光动效背景、液态玻璃卡片、平滑滚动、状态指示点与 Toast 反馈
-- **中英双语界面**：整个界面——窗口、对话框、托盘菜单、状态栏、提示信息乃至管理员修复控制台——在「设置 → 外观」一键切换中英文（默认英文），即时生效并持久化
+- **中英双语界面**：整个界面——窗口、对话框、托盘菜单、状态栏、提示信息乃至管理员修复控制台——**主窗口工具栏右上角地球按钮一键切换**（点击即生效并记住），也可在「设置 → 外观」中切换；选择持久化
 - **双连接模式**：支持「标准 RDP」（独立账户）和「子会话」（BetterGI 同款，当前账户）两种模式，在设置中切换
 - **系统托盘**：最小化到系统托盘，双击托盘图标快速恢复，右键菜单支持连接/截屏/显示/退出
 - **全局热键**：

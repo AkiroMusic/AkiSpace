@@ -31,7 +31,7 @@
                                     <DataTemplate>
                                         <Grid Margin="0,5">
                                             <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="260" />
+                                                <ColumnDefinition Width="300" />
                                                 <ColumnDefinition Width="90" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>

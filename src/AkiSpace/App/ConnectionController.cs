@@ -191,6 +191,13 @@ public sealed class ConnectionController
         {
             _sessionManager.LogoffChildSession(sid);
         }
+
+        // Zero-residue shutdown: an agent that was launched but never consumed its
+        // nonce file would otherwise leave a DACL-protected secret on disk until the
+        // next startup sweep. With the pipe server dying there is nothing left that
+        // can legitimately read it.
+        SweepStaleNonceFiles();
+
         _logger.LogInformation("Connection controller shut down");
     }
 
