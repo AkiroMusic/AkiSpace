@@ -164,6 +164,13 @@
         <Setter Property="Margin" Value="0,0,16,0" />
     </Style>
 
+    <!-- Row label for rows whose value cell is input + hint below: top-aligned so the
+         label sits on the input's line instead of centering against the whole cell. -->
+    <Style x:Key="RowLabel.Top" TargetType="TextBlock" BasedOn="{StaticResource RowLabel}">
+        <Setter Property="VerticalAlignment" Value="Top" />
+        <Setter Property="Margin" Value="0,8,16,0" />
+    </Style>
+
     <!-- ================= Inputs ================= -->
 
     <Style x:Key="Input.TextBox" TargetType="TextBox">

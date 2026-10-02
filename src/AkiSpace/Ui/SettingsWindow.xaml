@@ -4,7 +4,7 @@
         xmlns:chrome="clr-namespace:AkiSpace.Ui"
         xmlns:ui="clr-namespace:AkiSpace.Ui.Controls"
         xmlns:loc="clr-namespace:AkiSpace.Common"
-        Title="{loc:Loc Set_Title}" Width="580" Height="720"
+        Title="{loc:Loc Set_Title}" Width="640" Height="720"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource Brush.BgBase}">
     <Grid>
@@ -39,33 +39,37 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
 
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Mode}" />
-                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                    <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
-                                                 Content="{loc:Loc Set_ModeStandard}" GroupName="ConnMode" IsChecked="True" />
-                                    <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
-                                                 Content="{loc:Loc Set_ModeChild}" GroupName="ConnMode" Margin="8,0,0,0" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Mode}" />
+                                <StackPanel Grid.Row="0" Grid.Column="1">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
+                                                     Content="{loc:Loc Set_ModeStandard}" GroupName="ConnMode" IsChecked="True" />
+                                        <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
+                                                     Content="{loc:Loc Set_ModeChild}" GroupName="ConnMode" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_ModeHint}"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Width}" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Width}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumWidth" Minimum="800" Maximum="7680" Increment="160" Width="160" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PxHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Height}" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Height}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumHeight" Minimum="600" Maximum="4320" Increment="120" Width="160" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PxHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Depth}" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="3" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Depth}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumColorDepth" Minimum="8" Maximum="32" Increment="8" Width="120" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_DepthHint}" Margin="0,3,0,0" />
                                 </StackPanel>
 
-                                <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Port}" Margin="0,14,16,0" />
+                                <TextBlock Grid.Row="4" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Port}" Margin="0,14,16,0" />
                                 <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,14,0,0">
                                     <ui:NumberBox x:Name="NumPort" Minimum="1" Maximum="65535" Increment="1" Width="160" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PortHint}" TextWrapping="Wrap" Margin="0,3,0,0" />
@@ -91,8 +95,12 @@
                                 <CheckBox x:Name="ChkLogoff" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkLogoff}" Margin="0,9,0,0" />
                                 <CheckBox x:Name="ChkMinimizeTray" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkTray}" Margin="0,9,0,0" />
                                 <CheckBox x:Name="ChkPerformance" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkPerf}" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkHotkeys" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkHotkeys}" Margin="0,9,0,0" />
-                                <CheckBox x:Name="ChkGameMouse" Style="{StaticResource Input.CheckBox}" Content="{loc:Loc Set_ChkGameMouse}" Margin="0,9,0,0" />
+                                <CheckBox x:Name="ChkHotkeys" Style="{StaticResource Input.CheckBox}" Margin="0,9,0,0" MaxWidth="520">
+                                    <TextBlock Text="{loc:Loc Set_ChkHotkeys}" TextWrapping="Wrap" />
+                                </CheckBox>
+                                <CheckBox x:Name="ChkGameMouse" Style="{StaticResource Input.CheckBox}" Margin="0,9,0,0" MaxWidth="520">
+                                    <TextBlock Text="{loc:Loc Set_ChkGameMouse}" TextWrapping="Wrap" />
+                                </CheckBox>
                             </StackPanel>
                         </StackPanel>
                     </ui:GlassCard>
@@ -112,12 +120,12 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Username}" Margin="0,0,16,9" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Username}" Margin="0,0,16,9" />
                                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,9">
                                     <TextBox x:Name="TxtUsername" Style="{StaticResource Input.TextBox}" Width="260" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_UsernameHint}" Margin="0,3,0,0" />
                                 </StackPanel>
-                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_Password}" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Password}" />
                                 <StackPanel Grid.Row="1" Grid.Column="1">
                                     <PasswordBox x:Name="PbPassword" Style="{StaticResource Input.PasswordBox}" Width="260" HorizontalAlignment="Left" />
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_PasswordHint}" Margin="0,3,0,0" TextWrapping="Wrap" />
@@ -176,7 +184,7 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel}" Text="{loc:Loc Set_AutoPath}" />
+                                <TextBlock Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_AutoPath}" />
                                 <TextBox x:Name="TxtLaunchPath" Grid.Column="1" Style="{StaticResource Input.TextBox}" VerticalAlignment="Center" />
                                 <Button x:Name="BtnBrowse" Grid.Column="2" Style="{StaticResource Btn.Ghost}"
                                         Content="{loc:Loc Set_Browse}" Margin="8,0,0,0" Click="OnBrowse" />
