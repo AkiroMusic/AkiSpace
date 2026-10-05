@@ -66,6 +66,8 @@ internal sealed class UiShell
         _hotkeys.ToggleConnectRequested += () => _controller.ToggleConnect();
         _hotkeys.ShowWindowRequested += ShowMainWindow;
         _hotkeys.ScreenshotRequested += CaptureChildScreenToClipboard;
+        // A settings save can flip the global-hotkey switch — apply it immediately.
+        _settingsService.Changed += _hotkeys.ApplyEnabled;
 
         _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statusTimer.Tick += (_, _) => _controller.RefreshStatus();

@@ -46,7 +46,7 @@ public static class SmoothScroll
 
         e.Handled = true;
 
-        // One notch (delta 120) eases ~100px — close to the old jump distance, but
+        // One notch (delta 120) eases ~100px —
         // animated, so the perceived speed matches without the snap.
         var target = Math.Max(0, Math.Min(viewer.ScrollableHeight, viewer.VerticalOffset - e.Delta * 0.85));
         if (Math.Abs(target - viewer.VerticalOffset) < 0.5) return;

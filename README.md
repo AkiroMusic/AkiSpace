@@ -22,7 +22,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
   - `Ctrl+Shift+D`: Toggle connect/disconnect
   - `Ctrl+Alt+Space`: Show/restore main window
   - `Ctrl+Shift+S`: Capture clone screen to clipboard
-- **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. Driven by the paired replay agent (`--agent`), which AkiSpace auto-launches inside the clone session on connect (implemented in v0.1.6). **Hidden in child-session mode.**
+- **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. Driven by the paired replay agent (`--agent`), which AkiSpace auto-launches inside the clone session on connect. **Hidden in child-session mode.**
 - **Alt Release**: Hold Alt to temporarily release cursor back to host desktop
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
 - **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc. A **mode-aware verdict** states plainly which clone modes work on your machine (Home editions: child sessions out of the box, standard RDP needs the unlock layer), and standard RDP can be unlocked with **one click — AkiSpace downloads the pinned `sergiye/rdpWrapper` build from its official GitHub release, verifies the SHA-256 recorded at pin time, and runs the installer elevated (one UAC prompt; it also handles TermService restart and the Defender exclusion)**
@@ -114,7 +114,7 @@ Back in AkiSpace → "Environment Check/Repair" → "Recheck". All should show �
 
 AkiSpace's "One-Click Fix" installs a **single** inbound firewall rule. Windows Firewall never inspects loopback (`127.0.0.1`/`::1`) traffic — it is permitted at a higher WFP sub-layer — so an "allow 127.0.0.1" rule would be a no-op. Instead the fix adds one **block** rule on the RDP port (3389 or the configured port) with `remoteip=any`, which stops every genuine remote client while loopback RDP keeps working via the firewall's loopback bypass. Block rules also take precedence over allow rules, so this reliably closes the port remotely. It also deletes the default `Remote Desktop - User Mode (TCP-In)` rule that ships with some Windows editions if present, so it can't shadow the block. Both Standard RDP and Child Session use this port.
 
-Other security defaults (hardening landed v0.1.3–v0.1.6):
+Other security defaults:
 - **Clone password at rest** is DPAPI-encrypted (`DataProtectionScope.CurrentUser`). Plaintext on disk has been removed; copying the file to another user account or machine returns the literal fallback with a logged warning. There is no built-in default password: the first Standard-RDP connect prompts for it and it is persisted DPAPI-encrypted.
 - **`AuthenticationLevel=2`** (AttemptAuthentication) on the local RDP connection: localhost cert mismatch is logged/warned instead of silently skipped. A one-time cert warning may appear on first connect.
 - **One-Click Fix** now only disables the RDP Wrapper TermWrap hook when the user is in **child-session mode** (or ticks the explicit override). Standard-RDP-on-Home users no longer have their multi-session unlock silently stripped.
@@ -138,7 +138,7 @@ Main Desktop (Session 1, Your Account)                  Clone Session (Session 2
 │  │   (MsRdpClient11 Embed)  │◄─RDP 127.0.0.1►│  Independent Desktop     │
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT Relative  │                │  Mouse Replay (SendInput) │
-│  └─ MouseForwarder         │                │  (--agent, implemented)   │
+│  └─ MouseForwarder         │                │  (--agent)   │
 │      └─ Accumulate+10ms Batch│──Named Pipe──►│                          │
 │      └─ ClipCursor+Hide    │                │                          │
 │      └─ Alt Release        │                │                          │
@@ -216,7 +216,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
   - `Ctrl+Shift+D`：切换连接/断开分身
   - `Ctrl+Alt+Space`：显示/恢复主窗口
   - `Ctrl+Shift+S`：截取分身画面到剪贴板
-- **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。由配对的回放 Agent（`--agent`）驱动，AkiSpace 在连接时会自动在分身会话中启动该 Agent（已于 v0.1.6 实现）。**子会话模式下隐藏该按钮。**
+- **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。由配对的回放 Agent（`--agent`）驱动，AkiSpace 在连接时会自动在分身会话中启动该 Agent。**子会话模式下隐藏该按钮。**
 - **Alt 键释放**：按住 Alt 临时释放光标，回到主桌面操作
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
 - **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件；**模式感知结论**直接告诉你本机哪些分身模式可用（家庭版：子会话开箱即用，标准 RDP 需解锁层），并支持标准 RDP **一键解锁——自动从 sergiye/rdpWrapper 官方 GitHub 发布下载钉定版本、按发布时记录的 SHA-256 校验后提权安装（一次 UAC 授权；TermService 重启与 Defender 排除由安装器自动处理）**
@@ -308,7 +308,7 @@ Restart-Service TermService -Force
 
 AkiSpace 的「一键修复」只下发**一条**防火墙规则。Windows 防火墙从不检查回环（`127.0.0.1`/`::1`）流量——它在更高的 WFP 子层被放行——所以「允许 127.0.0.1」这类规则其实是空操作。取而代之，修复会在 RDP 端口（3389 或「设置」中配置的端口）上添加一条 `remoteip=any` 的入站**阻断**规则：它拦下所有真正来自远端的连接，而回环 RDP 凭借防火墙的回环旁路照常工作。阻断规则的优先级高于允许规则，因此能可靠地对远端关闭该端口。如果系统自带「Remote Desktop - User Mode (TCP-In)」公开规则也会一并删除（部分 Windows 版本默认带），以免它干扰阻断效果。标准 RDP 模式和子会话模式都通过此端口连接。
 
-v0.1.6 起的其他安全默认（下列加固自 v0.1.3 起引入）：
+其他安全默认：
 - **分身账户密码静态加密**：使用 DPAPI（`DataProtectionScope.CurrentUser`）加密后落盘 `%APPDATA%\AkiSpace\settings.json`。将文件复制到其他用户/机器将得到带告警日志的字面回退值，强迫重新输入。不再内置默认密码：首次「连接」标准 RDP 时会弹窗询问并加密保存。
 - **本地 RDP `AuthenticationLevel=2`**（AttemptAuthentication）：回环证书不匹配时记录告警而非静默跳过。首次连接可能出现一次性的证书提示。
 - **「一键修复」现在仅在子会话模式下禁用 TermWrap**（或勾选「同时禁用 TermWrap」覆选框），不再静默拆解家庭版标准 RDP 用户的多会话解锁层。
@@ -333,7 +333,7 @@ Get-NetFirewallRule | Where-Object {$_.DisplayName -like "*RDP*"} | Format-Table
 │  ├─ RawInputMonitor (STA)  │                │                          │
 │  │   └─ WM_INPUT 相对增量  │                │                          │
 │  └─ MouseForwarder         │                │  Mouse Replay (SendInput) │
-│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent, 已实现)       │
+│      └─ 累积+10ms 批处理    │──Named Pipe──►│  (--agent)               │
 │      └─ ClipCursor+隐藏    │                │                          │
 │      └─ Alt 释放           │                │                          │
 └────────────────────────────┘                └──────────────────────────┘

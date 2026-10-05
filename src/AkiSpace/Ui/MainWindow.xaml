@@ -133,22 +133,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- Toast feedback (capture / status hints), fades out automatically -->
-            <Border x:Name="ToastPill" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Top"
-                    Margin="0,14,0,0" Padding="18,8" CornerRadius="{StaticResource Radius.Full}"
-                    Background="{DynamicResource Brush.GlassBgStrong}"
-                    BorderBrush="{DynamicResource Brush.LiquidBorder}" BorderThickness="1"
-                    Effect="{DynamicResource Effect.Card}" Opacity="0" IsHitTestVisible="False">
-                <StackPanel Orientation="Horizontal">
-                    <Path x:Name="ToastIcon" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center"
-                          StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                          StrokeLineJoin="Round" Stretch="Uniform"
-                          Data="M9.3,12.5 A2.7,2.7 0 1,0 14.7,12.5 A2.7,2.7 0 1,0 9.3,12.5 Z M11,15 L13,17.5 L17.5,10.5" />
-                    <TextBlock x:Name="ToastText" Style="{StaticResource Text.Secondary}"
-                               VerticalAlignment="Center" Text="" />
-                </StackPanel>
-            </Border>
-
             <!-- RDP viewer area (the WindowsFormsHost is injected here by the shell) -->
             <Grid Grid.Row="2" Margin="16,8,16,8">
                 <Border Background="Black"
@@ -177,6 +161,24 @@
                     </StackPanel>
                 </Grid>
             </Grid>
+
+            <!-- Toast feedback (capture / status hints), fades out automatically.
+                 Declared AFTER the viewer so it stays on top of WPF content; when the
+                 hwnd-hosted ActiveX covers the row the status bar carries the message. -->
+            <Border x:Name="ToastPill" Grid.Row="2" HorizontalAlignment="Center" VerticalAlignment="Top"
+                    Margin="0,14,0,0" Padding="18,8" CornerRadius="{StaticResource Radius.Full}"
+                    Background="{DynamicResource Brush.GlassBgStrong}"
+                    BorderBrush="{DynamicResource Brush.LiquidBorder}" BorderThickness="1"
+                    Effect="{DynamicResource Effect.Card}" Opacity="0" IsHitTestVisible="False">
+                <StackPanel Orientation="Horizontal">
+                    <Path x:Name="ToastIcon" Width="15" Height="15" Margin="0,0,8,0" VerticalAlignment="Center"
+                          StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round" Stretch="Uniform"
+                          Data="M9.3,12.5 A2.7,2.7 0 1,0 14.7,12.5 A2.7,2.7 0 1,0 9.3,12.5 Z M11,15 L13,17.5 L17.5,10.5" />
+                    <TextBlock x:Name="ToastText" Style="{StaticResource Text.Secondary}"
+                               VerticalAlignment="Center" Text="" />
+                </StackPanel>
+            </Border>
 
             <!-- Bottom status bar (structural glass bar) -->
             <Border Grid.Row="3" Background="{DynamicResource Brush.GlassBg}"

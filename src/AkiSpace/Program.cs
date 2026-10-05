@@ -127,10 +127,9 @@ static class Program
         Console.ResetColor();
         Console.WriteLine();
 
-        // Build a minimal DI just for the services we need. The single
-        // FileLoggerProvider registration below is the only file sink for
-        // this mode (previously a standalone LoggerFactory double-registered
-        // the same log file with an independent lock).
+        // Build a minimal DI just for the services we need. Register the file sink
+        // exactly once: two providers on the same log file would double-write it
+        // with independent locks.
         var services = new ServiceCollection();
         services.AddLogging(b =>
         {

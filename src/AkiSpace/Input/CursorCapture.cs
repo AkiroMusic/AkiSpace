@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
 
@@ -7,11 +8,20 @@ namespace AkiSpace.Input;
 /// Clips the cursor to the RDP viewer window and hides it while game-mouse
 /// forwarding is active; restores on Alt-key release or deactivation.
 /// Mirrors BetterGI's LocalCursorCapture.
+///
+/// All Win32 cursor work runs on ONE dedicated owner thread: ShowCursor's display
+/// counter is per-thread, and Capture/Release arrive from arbitrary threadpool
+/// timer threads — hiding on one thread and showing on another would leave the
+/// cursor permanently invisible. ClipCursor/SetCursorPos would be safe anywhere,
+/// but keeping the whole operation on the owner thread makes the pairing trivially
+/// correct (FIFO order also guarantees Release runs after an in-flight Capture).
 /// </summary>
 public sealed class CursorCapture : IDisposable
 {
     private readonly ILogger<CursorCapture> _logger;
     private readonly object _gate = new();
+    private readonly BlockingCollection<Action> _ops = new(new ConcurrentQueue<Action>());
+    private readonly Thread _ownerThread;
     private User32.RECT? _previousClipRect;
     private User32.RECT _captureBounds;
     private bool _isCapturing;
@@ -22,11 +32,53 @@ public sealed class CursorCapture : IDisposable
     public CursorCapture(ILogger<CursorCapture> logger)
     {
         _logger = logger;
+        _ownerThread = new Thread(OpLoop)
+        {
+            IsBackground = true,
+            Name = "AkiSpace.CursorOwner",
+        };
+        _ownerThread.Start();
     }
 
     public bool IsCapturing
     {
         get { lock (_gate) return _isCapturing; }
+    }
+
+    /// <summary>Runs an operation on the cursor-owner thread and waits for it.</summary>
+    private void RunOnOwner(Action op)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        var done = new ManualResetEventSlim(false);
+        try
+        {
+            _ops.Add(() =>
+            {
+                try { op(); }
+                finally { done.Set(); }
+            });
+            done.Wait(TimeSpan.FromSeconds(2));
+        }
+        finally
+        {
+            done.Dispose();
+        }
+    }
+
+    private void OpLoop()
+    {
+        foreach (var op in _ops.GetConsumingEnumerable())
+        {
+            try
+            {
+                op();
+            }
+            catch (Exception ex)
+            {
+                // A cursor op must never kill the owner thread.
+                _logger.LogWarning(ex, "Cursor operation failed");
+            }
+        }
     }
 
     /// <summary>
@@ -40,6 +92,14 @@ public sealed class CursorCapture : IDisposable
     /// per second. On failure no captured state is left behind.
     /// </remarks>
     public bool Capture(User32.RECT bounds)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return false;
+        var result = false;
+        RunOnOwner(() => result = CaptureCore(bounds));
+        return result;
+    }
+
+    private bool CaptureCore(User32.RECT bounds)
     {
         lock (_gate)
         {
@@ -101,7 +161,9 @@ public sealed class CursorCapture : IDisposable
     /// Temporarily releases the clip + restores cursor visibility (Alt key pressed),
     /// and moves the cursor to the center of the capture bounds.
     /// </summary>
-    public void ReleaseTemporarily()
+    public void ReleaseTemporarily() => RunOnOwner(ReleaseTemporarilyCore);
+
+    private void ReleaseTemporarilyCore()
     {
         lock (_gate)
         {
@@ -120,7 +182,9 @@ public sealed class CursorCapture : IDisposable
     }
 
     /// <summary>Fully releases the clip and restores cursor visibility.</summary>
-    public void Release()
+    public void Release() => RunOnOwner(ReleaseCore);
+
+    private void ReleaseCore()
     {
         lock (_gate)
         {
@@ -153,10 +217,17 @@ public sealed class CursorCapture : IDisposable
 
     public void Dispose()
     {
-        lock (_gate)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            Release();
+            // Drain the queue so a queued Release still runs, then stop the loop.
+            _ops.CompleteAdding();
+            if (!_ownerThread.Join(TimeSpan.FromSeconds(2)))
+                _ownerThread.Interrupt();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Cursor owner thread shutdown issue");
         }
     }
 }

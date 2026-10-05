@@ -450,8 +450,18 @@ public sealed class PipeClient : IAsyncDisposable
                         _logger.LogError("Pipe handshake rejected by primary (nonce mismatch); not retrying");
                         return;
                     }
-                    // ack == null means no verdict arrived (timeout/EOF) — the server
-                    // may have dropped us for an unrelated reason; retry.
+                    if (ack == null)
+                    {
+                        // No verdict arrived (timeout / clean EOF): the comment in
+                        // ReadHandshakeAckAsync's contract — and the retry design —
+                        // require a retry, NOT a connection. Treating null as accepted
+                        // would wrap a half-dead stream in a PipeConnection whose read
+                        // loop EOFs immediately, silently killing the agent session.
+                        _logger.LogDebug("No handshake verdict from primary (timeout/EOF); retrying");
+                        try { await Task.Delay(1000, linked.Token).ConfigureAwait(false); }
+                        catch (OperationCanceledException) { return; }
+                        continue;
+                    }
                     _logger.LogInformation("Handshake accepted by primary");
 
                     _connection = new PipeConnection(stream, _logger);

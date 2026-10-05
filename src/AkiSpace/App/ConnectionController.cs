@@ -85,6 +85,18 @@ public sealed class ConnectionController
     private string? _lastFailureReason;
     private long _lastFailureDialogAt;
 
+    // After an explicit Disconnect the ActiveX reports Connected=1 until its async
+    // teardown settles (~1-2 s); the 1 Hz poll would then overwrite "已断开" with
+    // "已连接" (observed flicker). While this deadline is in the future, the poll
+    // skips the connected-state assignment and the user's terminal status stands.
+    private long _disconnectPollSuppressUntil;
+
+    // MSTSC raises OnDisconnected (mapped to ConnectionFailed) for an explicit
+    // client-side Disconnect as well — without this marker, intentionally ending a
+    // session pops a "connect failed" dialog. While this deadline is in the future,
+    // failure events are logged only.
+    private long _userDisconnectAt;
+
     // Previous GetSystemTimes sample for the 1 Hz system-CPU delta (the status
     // bar shows Task-Manager-comparable machine numbers, not this process's).
     private ulong _prevIdleTime;
@@ -223,6 +235,10 @@ public sealed class ConnectionController
     public async Task ConnectAsync()
     {
         if (_connecting || _isConnected) return;
+        // Set BEFORE the password prompt: ShowDialog pumps the dispatcher, and with
+        // the guard still open a second Connect click (or hotkey) would stack a
+        // nested prompt and race two connect flows.
+        _connecting = true;
         try
         {
             var settings = _settingsService.Current;
@@ -236,14 +252,13 @@ public sealed class ConnectionController
                 var password = _promptForClonePassword();
                 if (string.IsNullOrEmpty(password))
                 {
-                    SetStatusText("Conn_NoPassword");
+                    ResetConnectUi("Conn_NoPassword");
                     return;
                 }
                 _settingsService.Update(s => s.ClonePassword = password);
                 settings = _settingsService.Current;
             }
 
-            _connecting = true;
             SetStatusText("Conn_Preparing", StatusLevel.InFlight);
 
             if (settings.ConnectionMode != ConnectionMode.ChildSession
@@ -313,9 +328,8 @@ public sealed class ConnectionController
                 }
                 catch (Exception ex)
                 {
-                    // A throw here used to escape into Application.ThreadException and
-                    // leave the UI in a half-connected state; route it through the
-                    // normal reset instead.
+                    // Routed through the normal reset — letting it escape would leave
+                    // the UI in a half-connected state.
                     _logger.LogError(ex, "Deferred connect body failed");
                     ResetConnectUi("Conn_Failed");
                 }
@@ -362,8 +376,8 @@ public sealed class ConnectionController
 
     /// <summary>
     /// Removes and disposes the current RDP ActiveX host. Controls.Clear() does NOT
-    /// dispose children, so every reconnect previously leaked the AxHost, the MSTSC
-    /// COM object behind it and its event sink until process exit.
+    /// dispose children — without an explicit Dispose the AxHost, the MSTSC COM
+    /// object behind it and its event sink would leak until process exit.
     /// </summary>
     private void TearDownRdpHost()
     {
@@ -401,6 +415,8 @@ public sealed class ConnectionController
         SetStatusText("Conn_Disconnected");
         _connecting = false;
         _isConnected = false;
+        _disconnectPollSuppressUntil = Environment.TickCount64 + 5000;
+        _userDisconnectAt = Environment.TickCount64;
         TrayConnectedChanged?.Invoke(false);
     }
 
@@ -725,16 +741,35 @@ public sealed class ConnectionController
         };
         if (ofd.ShowDialog(_dialogOwner()) != System.Windows.Forms.DialogResult.OK) return;
 
-        if (_processLauncher.LaunchInChildSession(ofd.FileName, sid.Value))
+        // LaunchInChildSession polls the task state for up to ~2 s — keep that off
+        // the UI thread (same pattern as the agent/auto-launch paths).
+        var fileName = ofd.FileName;
+        var sessionId = sid.Value;
+        SetStatusText("Conn_Launching", StatusLevel.InFlight, Path.GetFileName(fileName));
+        _ = Task.Run(() =>
         {
-            SetStatusText("Conn_Launched", StatusLevel.Good, Path.GetFileName(ofd.FileName), sid.Value);
-        }
-        else
-        {
-            SetStatusText("Conn_LaunchFailed");
-            System.Windows.Forms.MessageBox.Show(Loc.T("Box_LaunchFail"), "AkiSpace",
-                System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
-        }
+            try
+            {
+                if (_processLauncher.LaunchInChildSession(fileName, sessionId))
+                {
+                    _defer(() => SetStatusText("Conn_Launched", StatusLevel.Good,
+                        Path.GetFileName(fileName), sessionId));
+                }
+                else
+                {
+                    _defer(() =>
+                    {
+                        SetStatusText("Conn_LaunchFailed");
+                        System.Windows.Forms.MessageBox.Show(Loc.T("Box_LaunchFail"), "AkiSpace",
+                            System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Error);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Manual launch in child session failed");
+            }
+        });
     }
 
     // ---------------------------------------------------------------- RDP Events
@@ -796,6 +831,13 @@ public sealed class ConnectionController
     private void OnRdpConnectionFailed(string reason)
     {
         if (_closing) return;
+        // An explicit user Disconnect also fires OnDisconnected (mapped here); the
+        // "已断开" terminal state is already on screen — never turn it into an error.
+        if (Environment.TickCount64 - Volatile.Read(ref _userDisconnectAt) < 5000)
+        {
+            _logger.LogInformation("Ignoring failure event after user-initiated disconnect: {Reason}", reason);
+            return;
+        }
         _logger.LogWarning("RDP connection failed: {Reason}", reason);
         ResetConnectUi("Conn_Failed");
 
@@ -846,12 +888,28 @@ public sealed class ConnectionController
             {
                 RefreshRdpHandles();
                 var connected = _rdpHost.GetConnectedState();
-                _statusKey = connected ? "Conn_Connected" : "Conn_NotConnected";
-                _statusLevel = connected ? StatusLevel.Good : StatusLevel.Idle;
-                _statusArgs = [];
-                _isConnected = connected;
-                ApplyState();
-                TrayConnectedChanged?.Invoke(connected);
+                // While connecting, the in-flight status ("connecting to …", amber dot)
+                // must stand: GetConnectedState() is false for the whole negotiation and
+                // the poll would otherwise overwrite it with "not connected". Same for
+                // the post-disconnect suppression window (see field comment); a
+                // reconnect's own status updates come through events, so skipping the
+                // poll's overwrite there is harmless.
+                var pollOverwriteAllowed = !_connecting
+                    && Environment.TickCount64 >= Volatile.Read(ref _disconnectPollSuppressUntil);
+                if (pollOverwriteAllowed)
+                {
+                    _statusKey = connected ? "Conn_Connected" : "Conn_NotConnected";
+                    _statusLevel = connected ? StatusLevel.Good : StatusLevel.Idle;
+                    _statusArgs = [];
+                    _isConnected = connected;
+                    ApplyState();
+                    TrayConnectedChanged?.Invoke(connected);
+                }
+                else if (!connected && !_connecting)
+                {
+                    // Settled earlier than expected — lift the suppression immediately.
+                    Volatile.Write(ref _disconnectPollSuppressUntil, 0);
+                }
             }
 
             if (_settingsService.Current.ShowPerformance)

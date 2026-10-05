@@ -306,23 +306,36 @@ public partial class SetupWindow : ChromeWindow
     private void OnCopyVersion(object sender, RoutedEventArgs e) =>
         CopyToClipboard(_sessionManager.GetTermsrvVersion(), Loc.T("Env_CopiedVersion"));
 
-    private void OnCopyDiagnostics(object sender, RoutedEventArgs e)
+    private void OnCopyDiagnostics(object sender, RoutedEventArgs e) => _ = CopyDiagnosticsAsync();
+
+    /// <summary>Async: the check batch includes the multi-second listener probe and
+    /// must never run on the UI thread (the sync batch would freeze this window).</summary>
+    private async System.Threading.Tasks.Task CopyDiagnosticsAsync()
     {
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine(Loc.T("Diag_Header"));
-        sb.AppendLine();
-        sb.AppendLine(Loc.F("Diag_Time", $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}"));
-        sb.AppendLine(Loc.F("Diag_Os", Environment.OSVersion.ToString()));
-        sb.AppendLine(Loc.F("Diag_Proc", Environment.Is64BitProcess ? "x64" : "x86",
-            Environment.Is64BitOperatingSystem ? "64-bit OS" : "32-bit OS"));
-        sb.AppendLine();
-        sb.AppendLine(Loc.T("Diag_Section"));
-        foreach (var c in _verifier.RunAllChecks())
+        try
         {
-            var icon = c.Pass ? "✓" : "✗";
-            sb.AppendLine($"- {icon} **{c.Name}** — {c.Detail}");
+            var results = await _verifier.RunAllChecksAsync();
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(Loc.T("Diag_Header"));
+            sb.AppendLine();
+            sb.AppendLine(Loc.F("Diag_Time", $"{DateTime.Now:yyyy-MM-dd HH:mm:ss}"));
+            sb.AppendLine(Loc.F("Diag_Os", Environment.OSVersion.ToString()));
+            sb.AppendLine(Loc.F("Diag_Proc", Environment.Is64BitProcess ? "x64" : "x86",
+                Environment.Is64BitOperatingSystem ? "64-bit OS" : "32-bit OS"));
+            sb.AppendLine();
+            sb.AppendLine(Loc.T("Diag_Section"));
+            foreach (var c in results)
+            {
+                var icon = c.Pass ? "✓" : "✗";
+                sb.AppendLine($"- {icon} **{c.Name}** — {c.Detail}");
+            }
+            CopyToClipboard(sb.ToString(), Loc.T("Env_CopiedDiag"));
         }
-        CopyToClipboard(sb.ToString(), Loc.T("Env_CopiedDiag"));
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Copy diagnostics failed");
+            CopyToClipboard(Loc.F("Env_CheckFailed", ex.Message), Loc.T("Env_CopiedDiag"));
+        }
     }
 
     private static void CopyToClipboard(string text, string successMessage)

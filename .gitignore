@@ -54,3 +54,5 @@ publish/
 .omo/
 .codegraph/
 .zcode/
+.tmp-*/
+.rel/

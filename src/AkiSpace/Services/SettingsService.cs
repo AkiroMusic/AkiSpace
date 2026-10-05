@@ -123,6 +123,10 @@ public sealed class SettingsService
         get { lock (_gate) return _settings; }
     }
 
+    /// <summary>Raised after every committed <see cref="Update"/> so live consumers
+    /// (e.g. the global hotkey switch) can react without an app restart.</summary>
+    public event Action? Changed;
+
     /// <summary>Atomically replace the settings and persist to disk.</summary>
     public void Update(Action<AppSettings> mutate)
     {
@@ -133,6 +137,7 @@ public sealed class SettingsService
             _settings = clone;
             SaveCore(clone);
         }
+        Changed?.Invoke();
     }
 
     private AppSettings LoadCore()
@@ -164,7 +169,15 @@ public sealed class SettingsService
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             _logger.LogWarning(ex, "Corrupt settings file at {Path}; using defaults", _filePath);
-            return new AppSettings();
+            var defaults = new AppSettings();
+            // Heal the file immediately with the defaults so the corrupt content
+            // doesn't linger until the next (possibly never) settings change.
+            try { SaveCore(defaults); }
+            catch (Exception saveEx)
+            {
+                _logger.LogDebug(saveEx, "Could not rewrite corrupt settings file at {Path}", _filePath);
+            }
+            return defaults;
         }
     }
 

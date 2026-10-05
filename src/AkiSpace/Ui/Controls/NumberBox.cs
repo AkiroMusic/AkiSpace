@@ -53,13 +53,43 @@ public sealed class NumberBox : Control
             _text.KeyDown += (_, e) =>
             {
                 if (e.Key == Key.Enter) CommitText();
-                if (e.Key == Key.Up) { Step(+1); e.Handled = true; }
-                if (e.Key == Key.Down) { Step(-1); e.Handled = true; }
+                if (e.Key == Key.Up) { CommitText(); Step(+1); e.Handled = true; }
+                if (e.Key == Key.Down) { CommitText(); Step(-1); e.Handled = true; }
             };
         }
         if (GetTemplateChild(PartUp) is RepeatButton up) up.Click += (_, _) => Step(+1);
         if (GetTemplateChild(PartDown) is RepeatButton down) down.Click += (_, _) => Step(-1);
         SyncText();
+    }
+
+    protected override System.Windows.Automation.Peers.AutomationPeer OnCreateAutomationPeer() =>
+        new NumberBoxAutomationPeer(this);
+
+    /// <summary>Exposes the box to screen readers and automation as a range value
+    /// (value + bounds + step); a bare templated Control is invisible to UIA.</summary>
+    private sealed class NumberBoxAutomationPeer(NumberBox owner)
+        : System.Windows.Automation.Peers.FrameworkElementAutomationPeer(owner),
+          System.Windows.Automation.Provider.IRangeValueProvider
+    {
+        public override object? GetPattern(System.Windows.Automation.Peers.PatternInterface patternInterface) =>
+            patternInterface == System.Windows.Automation.Peers.PatternInterface.RangeValue
+                ? this
+                : base.GetPattern(patternInterface);
+
+        protected override string GetAutomationIdCore() =>
+            owner.Name is { Length: > 0 } name ? name : base.GetAutomationIdCore();
+
+        protected override string GetClassNameCore() => "NumberBox";
+
+        double System.Windows.Automation.Provider.IRangeValueProvider.Value => owner.Value;
+        double System.Windows.Automation.Provider.IRangeValueProvider.Minimum => owner.Minimum;
+        double System.Windows.Automation.Provider.IRangeValueProvider.Maximum => owner.Maximum;
+        double System.Windows.Automation.Provider.IRangeValueProvider.SmallChange => owner.Increment;
+        double System.Windows.Automation.Provider.IRangeValueProvider.LargeChange => owner.Increment * 10;
+        bool System.Windows.Automation.Provider.IRangeValueProvider.IsReadOnly => false;
+
+        void System.Windows.Automation.Provider.IRangeValueProvider.SetValue(double value) =>
+            owner.Value = (int)Math.Clamp(value, owner.Minimum, owner.Maximum);
     }
 
     private void Step(int direction)

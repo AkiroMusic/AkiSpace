@@ -225,7 +225,7 @@ public static partial class User32
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern ushort RegisterClass(ref WNDCLASS lpWndClass);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
@@ -379,6 +379,9 @@ public static partial class User32
 }
 public static partial class User32
 {
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
     [DllImport("user32.dll")]
     public static extern bool IsWindowEnabled(IntPtr hWnd);
 
