@@ -32,6 +32,24 @@ public partial class SettingsWindow : ChromeWindow
         }
     }
 
+    /// <summary>
+    /// Standard-RDP selection guard: on a Home edition without the unlock layer,
+    /// standard RDP cannot connect — warn immediately (before saving) and point at
+    /// the env check, which can install the layer with one click. Cheap registry
+    /// probes only (no listener round-trip).
+    /// </summary>
+    private void OnModeChanged(object sender, RoutedEventArgs e)
+    {
+        // During XAML parse the radio's IsChecked="True" fires this before the
+        // warning TextBlock (declared below it) exists — skip, LoadSettings re-runs it.
+        if (StandardWarn is null) return;
+        var standardViable = !RdpWrapperInstaller.IsThisMachineHomeEdition()
+                             || RdpWrapperInstaller.IsWrapperHookInstalled();
+        StandardWarn.Visibility = RdoStandard.IsChecked == true && !standardViable
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     /// <summary>Live preview: switches the whole interface immediately without persisting.</summary>
     private void OnLanguagePreview(object sender, RoutedEventArgs e)
     {

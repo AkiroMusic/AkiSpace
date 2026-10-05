@@ -95,7 +95,8 @@ static class Program
             AppShellServices.Init(
                 loggerFactory, settingsService,
                 provider.GetRequiredService<EnvironmentVerifier>(),
-                provider.GetRequiredService<ChildSessionManager>());
+                provider.GetRequiredService<ChildSessionManager>(),
+                provider.GetRequiredService<RdpWrapperInstaller>());
 
             var shell = new UiShell(provider);
             app.Run(shell.Main);
@@ -307,6 +308,7 @@ static class Program
         services.AddSingleton<ChildSessionManager>();
         services.AddSingleton<EnvironmentVerifier>();
         services.AddSingleton<ProcessLauncher>();
+        services.AddSingleton<RdpWrapperInstaller>();
         services.AddSingleton<Input.IRawInputMonitor, Input.RawInputMonitor>();
         services.AddSingleton<Input.CursorCapture>();
         services.AddSingleton<Ipc.PipeServer>();

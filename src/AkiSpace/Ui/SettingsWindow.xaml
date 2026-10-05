@@ -43,12 +43,16 @@
                                 <StackPanel Grid.Row="0" Grid.Column="1">
                                     <StackPanel Orientation="Horizontal">
                                         <RadioButton x:Name="RdoStandard" Style="{StaticResource Input.Radio}"
-                                                     Content="{loc:Loc Set_ModeStandard}" GroupName="ConnMode" IsChecked="True" />
+                                                     Content="{loc:Loc Set_ModeStandard}" GroupName="ConnMode" IsChecked="True"
+                                                     Checked="OnModeChanged" Unchecked="OnModeChanged" />
                                         <RadioButton x:Name="RdoChild" Style="{StaticResource Input.Radio}"
-                                                     Content="{loc:Loc Set_ModeChild}" GroupName="ConnMode" Margin="8,0,0,0" />
+                                                     Content="{loc:Loc Set_ModeChild}" GroupName="ConnMode" Margin="8,0,0,0" Checked="OnModeChanged" />
                                     </StackPanel>
                                     <TextBlock Style="{StaticResource Text.Tertiary}" Text="{loc:Loc Set_ModeHint}"
                                                TextWrapping="Wrap" Margin="0,4,0,0" />
+                                    <TextBlock x:Name="StandardWarn" Style="{StaticResource Text.Secondary}"
+                                               Foreground="{DynamicResource Brush.Warning}" Visibility="Collapsed"
+                                               Text="{loc:Loc Set_StandardWarn}" TextWrapping="Wrap" Margin="0,6,0,0" />
                                 </StackPanel>
 
                                 <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource RowLabel.Top}" Text="{loc:Loc Set_Width}" Margin="0,14,16,0" />

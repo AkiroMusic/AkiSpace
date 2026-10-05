@@ -37,6 +37,7 @@ public partial class SetupWindow : ChromeWindow
     private readonly EnvironmentVerifier _verifier;
     private readonly ChildSessionManager _sessionManager;
     private readonly SettingsService _settingsService;
+    private readonly RdpWrapperInstaller _wrapperInstaller;
 
     public sealed record CheckRow(string Name, string Status, string Detail, Brush StatusBrush);
 
@@ -44,13 +45,15 @@ public partial class SetupWindow : ChromeWindow
         ILogger<SetupWindow> logger,
         EnvironmentVerifier verifier,
         ChildSessionManager sessionManager,
-        SettingsService settingsService)
+        SettingsService settingsService,
+        RdpWrapperInstaller? wrapperInstaller = null)
     {
         InitializeComponent();
         _logger = logger;
         _verifier = verifier;
         _sessionManager = sessionManager;
         _settingsService = settingsService;
+        _wrapperInstaller = wrapperInstaller ?? AppShellServices.WrapperInstaller;
 
         var termsrvVer = _sessionManager.GetTermsrvVersion();
         var verParts = termsrvVer.Split('.');
@@ -111,7 +114,121 @@ public partial class SetupWindow : ChromeWindow
         }
         ChecksList.ItemsSource = rows;
         HomeGuideCard.Visibility = wrapperInstallFailed ? Visibility.Visible : Visibility.Collapsed;
+        UpdateVerdict(results);
         _logger.LogInformation("Environment checks completed; home guide visible: {Show}", wrapperInstallFailed);
+    }
+
+    // ---------------------------------------------------------------- verdict
+
+    /// <summary>
+    /// Translates the raw checks into what the user cares about: which clone modes
+    /// actually work on this machine. Standard RDP needs the listener AND (on Home)
+    /// the unlock layer; child sessions need the broker switch. On a Home machine
+    /// without the layer this reads as "只能用子会话" and offers the one-click install.
+    /// </summary>
+    private void UpdateVerdict(List<EnvCheckResult> results)
+    {
+        var child = results.FirstOrDefault(c => c.Id == "ChildSessions");
+        var wrapper = results.FirstOrDefault(c => c.Id == "WrapperUnlock");
+        var listener = results.FirstOrDefault(c => c.Id == "Listener");
+
+        if (child is null || wrapper is null || listener is null)
+        {
+            TxtChildVerdict.Text = Loc.T("Env_ChildUnknown");
+            DotChildVerdict.Fill = ThemeBrush(WpfThemeHost.TextTertiary);
+            TxtStandardVerdict.Text = Loc.T("Env_ChildUnknown");
+            DotStandardVerdict.Fill = ThemeBrush(WpfThemeHost.TextTertiary);
+            ShowInstallUi(showButton: false, showNote: false, showManual: false, status: null);
+            return;
+        }
+
+        TxtChildVerdict.Text = child.Pass ? Loc.T("Env_ChildOk") : Loc.T("Env_ChildNeedsFix");
+        DotChildVerdict.Fill = child.Pass ? ThemeBrush(WpfThemeHost.Success) : ThemeBrush(WpfThemeHost.Warning);
+
+        var standardOk = wrapper.Pass && listener.Pass;
+        TxtStandardVerdict.Text = standardOk ? Loc.T("Env_StandardOk") : Loc.T("Env_StandardUnavailable");
+        DotStandardVerdict.Fill = standardOk ? ThemeBrush(WpfThemeHost.Success) : ThemeBrush(WpfThemeHost.Error);
+
+        var homeWithoutLayer = !wrapper.Pass;
+        if (standardOk)
+        {
+            // Wrapper present → child sessions are refused while the hook is active.
+            TxtVerdictReason.Text = Loc.T("Env_WrapperInstalledNote");
+            TxtVerdictReason.Visibility = RdpWrapperInstaller.IsWrapperHookInstalled()
+                ? Visibility.Visible : Visibility.Collapsed;
+            ShowInstallUi(showButton: false, showNote: false, showManual: false, status: null);
+        }
+        else
+        {
+            TxtVerdictReason.Text = Loc.T("Env_StandardReason");
+            TxtVerdictReason.Visibility = Visibility.Visible;
+            ShowInstallUi(
+                showButton: homeWithoutLayer,
+                showNote: homeWithoutLayer,
+                showManual: homeWithoutLayer,
+                status: null);
+        }
+    }
+
+    private void ShowInstallUi(bool showButton, bool showNote, bool showManual, string? status)
+    {
+        BtnInstallWrapper.Visibility = showButton ? Visibility.Visible : Visibility.Collapsed;
+        TxtInstallNote.Visibility = showNote ? Visibility.Visible : Visibility.Collapsed;
+        BtnManualGuide.Visibility = showManual ? Visibility.Visible : Visibility.Collapsed;
+        TxtInstallStatus.Text = status ?? string.Empty;
+        TxtInstallStatus.Visibility = status is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void OnShowManualGuide(object sender, RoutedEventArgs e)
+    {
+        HomeGuideCard.Visibility = Visibility.Visible;
+        HomeGuideCard.BringIntoView();
+    }
+
+    // ---------------------------------------------------------------- one-click unlock layer install
+
+    /// <summary>
+    /// One-click RDP unlock layer install for Home editions: download the pinned
+    /// official build → SHA-256 verify → run elevated (-install -offline; the upstream
+    /// installer restarts TermService itself) → re-check so the verdict refreshes.
+    /// </summary>
+    private async void OnInstallWrapper(object sender, RoutedEventArgs e)
+    {
+        BtnInstallWrapper.IsEnabled = false;
+        try
+        {
+            ShowInstallUi(showButton: true, showNote: true, showManual: true, status: Loc.F("Env_InstallDownloading", RdpWrapperInstaller.PinnedVersion));
+            var exePath = await _wrapperInstaller.DownloadVerifiedAsync();
+            ShowInstallUi(showButton: true, showNote: true, showManual: true, status: Loc.T("Env_InstallUac"));
+
+            var process = Process.Start(RdpWrapperInstaller.BuildInstallStartInfo(exePath));
+            if (process is null)
+                throw new InvalidOperationException("installer process could not be started");
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0)
+            {
+                ShowInstallUi(showButton: true, showNote: true, showManual: true,
+                    status: Loc.F("Env_InstallFailed", $"rdpWrapper exit code {process.ExitCode}"));
+                return;
+            }
+
+            ShowInstallUi(showButton: false, showNote: true, showManual: false, status: Loc.T("Env_InstallDone"));
+            await RunChecksAsync();
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            ShowInstallUi(showButton: true, showNote: true, showManual: true, status: Loc.T("Env_InstallUacCancelled"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "One-click wrapper install failed");
+            ShowInstallUi(showButton: true, showNote: true, showManual: true, status: Loc.F("Env_InstallFailed", ex.Message));
+        }
+        finally
+        {
+            BtnInstallWrapper.IsEnabled = true;
+        }
     }
 
     private static Brush PassBrush() => ThemeBrush(WpfThemeHost.Success);

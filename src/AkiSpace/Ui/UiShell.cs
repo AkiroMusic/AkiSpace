@@ -118,6 +118,18 @@ internal sealed class UiShell
         _shutdownDone = true;
 
         _statusTimer.Stop();
+
+        // The watchdog MUST be armed before the destructive cleanup below: the MSTSC
+        // ActiveX can block synchronously inside DisconnectSession/TearDownRdpHost
+        // (observed: closing while a child-session connect is still negotiating hangs
+        // the UI thread for good). With the watchdog armed first, any such hang still
+        // terminates the process; on the healthy path the process exits before it fires.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(3000);
+            Environment.Exit(0);
+        });
+
         _controller.OnAppClosing(userInitiated: Main.IsUserInitiatedClose);
         _hotkeys.Dispose();
         _tray.Dispose();
@@ -128,11 +140,6 @@ internal sealed class UiShell
         // cleanup above has already run, so enforce termination with a watchdog;
         // on the healthy path the process exits normally before it fires.
         System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background);
-        _ = Task.Run(async () =>
-        {
-            await Task.Delay(3000);
-            Environment.Exit(0);
-        });
     }
 
     private void ShowMainWindow()
