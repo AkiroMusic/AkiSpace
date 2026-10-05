@@ -53,6 +53,7 @@ public sealed class EnvironmentVerifier
     {
         return new List<EnvCheckResult>
         {
+            CheckWindowsEdition(),
             CheckRdpEnabled(),
             CheckMultiSession(),
             CheckRdpWrapper(),
@@ -83,6 +84,18 @@ public sealed class EnvironmentVerifier
 
     // Listener probe is delegated to ChildSessionManager.
 
+    /// <summary>Informational (always Pass): which Windows edition this is, since it
+    /// decides whether standard RDP needs an unlock layer.</summary>
+    public EnvCheckResult CheckWindowsEdition()
+    {
+        var edition = RdpWrapperInstaller.GetEditionId();
+        var home = RdpWrapperInstaller.IsHomeEdition(edition);
+        var detail = edition is null
+            ? Loc.T("Chk_EditionUnknown")
+            : Loc.F(home ? "Chk_EditionHome" : "Chk_EditionStandard", edition);
+        return new("Edition", Loc.T("Chk_Edition"), true, detail);
+    }
+
     public EnvCheckResult CheckRdpEnabled()
     {
         var value = ReadDword(TerminalServerKey, RegistryKeys.FDenyTSConnections);
@@ -102,8 +115,14 @@ public sealed class EnvironmentVerifier
     public EnvCheckResult CheckRdpWrapper()
     {
         var installed = _sessionManager.IsRdpWrapperInstalled();
-        return new("WrapperUnlock", Loc.T("Chk_WrapperUnlock"), installed,
-            installed ? Loc.T("Chk_WrapperFound") : Loc.T("Chk_WrapperMissing"));
+        // On non-Home editions the unlock layer is NOT required (standard RDP is native),
+        // so its absence must not read as a failure; on Home it genuinely gates standard RDP.
+        var home = RdpWrapperInstaller.IsHomeEdition(RdpWrapperInstaller.GetEditionId());
+        var pass = installed || !home;
+        var detail = installed
+            ? Loc.T("Chk_WrapperFound")
+            : home ? Loc.T("Chk_WrapperMissing") : Loc.T("Chk_WrapperNotNeeded");
+        return new("WrapperUnlock", Loc.T("Chk_WrapperUnlock"), pass, detail);
     }
 
     public EnvCheckResult CheckStartRcm()

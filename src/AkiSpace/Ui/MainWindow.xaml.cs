@@ -87,6 +87,31 @@ public partial class MainWindow : Window
         GameMouseText.Text = s.GameMouseText;
         BtnLaunch.IsEnabled = s.LaunchEnabled;
         SetStatus(LblConnection, DotConnection, new StatusLine(s.ConnectionStatusText, s.ConnectionLevel));
+        EnsureWindowEnabled();
+    }
+
+    /// <summary>
+    /// The MSTSC ActiveX disables its owner chain while connecting/connected — observed
+    /// as the whole main window becoming WS_DISABLED after a child-session login, which
+    /// makes the title-bar X (and CloseMainWindow) silently dead. RefreshStatus calls
+    /// this every second; re-enable when something disabled us. No-op when healthy.
+    /// </summary>
+    private void EnsureWindowEnabled()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero && !User32.IsWindowEnabled(hwnd))
+            {
+                User32.EnableWindow(hwnd, true);
+                AppShellServices.LoggerFor<MainWindow>()
+                    .LogWarning("Main window was disabled (ActiveX owner-disable); re-enabled");
+            }
+        }
+        catch (Exception ex)
+        {
+            AppShellServices.LoggerFor<MainWindow>().LogDebug(ex, "EnsureWindowEnabled failed");
+        }
     }
 
     private void OnRdpHostChanged(RdpActiveXHost? host)

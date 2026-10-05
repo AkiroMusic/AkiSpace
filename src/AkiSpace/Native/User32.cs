@@ -377,3 +377,11 @@ public static partial class User32
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 }
+public static partial class User32
+{
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowEnabled(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
+}

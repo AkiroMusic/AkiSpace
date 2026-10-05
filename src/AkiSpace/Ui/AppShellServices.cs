@@ -13,17 +13,20 @@ internal static class AppShellServices
     public static SettingsService Settings { get; private set; } = null!;
     public static EnvironmentVerifier EnvironmentVerifier { get; private set; } = null!;
     public static ChildSessionManager ChildSessionManager { get; private set; } = null!;
+    public static RdpWrapperInstaller WrapperInstaller { get; private set; } = null!;
 
     public static void Init(
         ILoggerFactory loggerFactory,
         SettingsService settings,
         EnvironmentVerifier environmentVerifier,
-        ChildSessionManager childSessionManager)
+        ChildSessionManager childSessionManager,
+        RdpWrapperInstaller wrapperInstaller)
     {
         _loggerFactory = loggerFactory;
         Settings = settings;
         EnvironmentVerifier = environmentVerifier;
         ChildSessionManager = childSessionManager;
+        WrapperInstaller = wrapperInstaller;
     }
 
     public static ILogger<T> LoggerFor<T>() =>

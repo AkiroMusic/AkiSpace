@@ -20,6 +20,42 @@
                           ui:SmoothScroll.IsEnabled="True">
                 <StackPanel Margin="24">
 
+                    <!-- 环境结论（模式可用性 + 一键安装解锁层） -->
+                    <ui:GlassCard Margin="0,0,0,24">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.CardTitle}" Text="{loc:Loc Env_VerdictCard}" />
+                            <TextBlock Style="{StaticResource Text.CardSubtitle}" Text="{loc:Loc Env_VerdictSub}"
+                                       Margin="0,2,0,0" />
+                            <StackPanel Margin="0,12,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse x:Name="DotChildVerdict" Width="8" Height="8" Margin="0,0,8,0"
+                                             VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
+                                    <TextBlock x:Name="TxtChildVerdict" Style="{StaticResource Text.Base}"
+                                               Text="…" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Ellipse x:Name="DotStandardVerdict" Width="8" Height="8" Margin="0,0,8,0"
+                                             VerticalAlignment="Center" Fill="{DynamicResource Brush.TextTertiary}" />
+                                    <TextBlock x:Name="TxtStandardVerdict" Style="{StaticResource Text.Base}"
+                                               Text="…" />
+                                </StackPanel>
+                                <TextBlock x:Name="TxtVerdictReason" Style="{StaticResource Text.Secondary}"
+                                           Visibility="Collapsed" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            </StackPanel>
+                            <Button x:Name="BtnInstallWrapper" Style="{StaticResource Btn.Primary}"
+                                    Content="{loc:Loc Env_InstallWrapper}" Margin="0,14,0,0"
+                                    HorizontalAlignment="Left" Visibility="Collapsed" Click="OnInstallWrapper" />
+                            <TextBlock x:Name="TxtInstallNote" Style="{StaticResource Text.Secondary}"
+                                       Foreground="{DynamicResource Brush.Warning}" Visibility="Collapsed"
+                                       Text="{loc:Loc Env_InstallNote}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            <TextBlock x:Name="TxtInstallStatus" Style="{StaticResource Text.Secondary}"
+                                       Visibility="Collapsed" TextWrapping="Wrap" Margin="0,8,0,0" />
+                            <Button x:Name="BtnManualGuide" Style="{StaticResource Btn.Ghost}"
+                                    Content="{loc:Loc Env_ManualGuide}" Margin="0,8,0,0"
+                                    HorizontalAlignment="Left" Visibility="Collapsed" Click="OnShowManualGuide" />
+                        </StackPanel>
+                    </ui:GlassCard>
+
                     <!-- 检查卡片 -->
                     <ui:GlassCard Margin="0,0,0,24">
                         <StackPanel>

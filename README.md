@@ -25,7 +25,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 - **Game Mouse Mode** *(standard-RDP mode only)*: Capture host relative mouse motion → forward to clone session; auto clip & hide cursor. Driven by the paired replay agent (`--agent`), which AkiSpace auto-launches inside the clone session on connect (implemented in v0.1.6). **Hidden in child-session mode.**
 - **Alt Release**: Hold Alt to temporarily release cursor back to host desktop
 - **Launch in Clone**: Launch programs inside the clone session via Task Scheduler with admin rights
-- **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc.
+- **Environment Check/Repair**: One-click detection & repair for RDP status, multi-session, RDP Wrapper, StartRCM, firewall, TermService, etc. A **mode-aware verdict** states plainly which clone modes work on your machine (Home editions: child sessions out of the box, standard RDP needs the unlock layer), and standard RDP can be unlocked with **one click — AkiSpace downloads the pinned `sergiye/rdpWrapper` build from its official GitHub release, verifies the SHA-256 recorded at pin time, and runs the installer elevated (one UAC prompt; it also handles TermService restart and the Defender exclusion)**
 - **Performance Monitor**: Status bar shows real-time **system-wide** CPU & memory usage (Task-Manager comparable: GetSystemTimes delta + GlobalMemoryStatusEx)
 - **Settings Persistence**: `%APPDATA%\AkiSpace\settings.json` (resolution, port, clone account, color pack, language, smart scaling, hotkeys, etc.)
 
@@ -219,7 +219,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **游戏鼠标模式**（仅标准 RDP 模式）：捕获主桌面相对鼠标移动 → 转发到分身会话，光标自动裁剪/隐藏。由配对的回放 Agent（`--agent`）驱动，AkiSpace 在连接时会自动在分身会话中启动该 Agent（已于 v0.1.6 实现）。**子会话模式下隐藏该按钮。**
 - **Alt 键释放**：按住 Alt 临时释放光标，回到主桌面操作
 - **在分身中启动**：通过 Task Scheduler 以管理员权限在分身会话中启动程序
-- **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件
+- **环境检查/修复**：一键检测 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙、TermService 等前置条件；**模式感知结论**直接告诉你本机哪些分身模式可用（家庭版：子会话开箱即用，标准 RDP 需解锁层），并支持标准 RDP **一键解锁——自动从 sergiye/rdpWrapper 官方 GitHub 发布下载钉定版本、按发布时记录的 SHA-256 校验后提权安装（一次 UAC 授权；TermService 重启与 Defender 排除由安装器自动处理）**
 - **性能监控**：状态栏实时显示**系统级** CPU 占用与内存使用（与任务管理器同口径：GetSystemTimes 增量 + GlobalMemoryStatusEx）
 - **设置持久化**：`%APPDATA%\AkiSpace\settings.json`（分辨率、端口、分身账户、配色包、界面语言、智能缩放、热键等）
 

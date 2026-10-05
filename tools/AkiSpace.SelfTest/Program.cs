@@ -123,7 +123,7 @@ void Check(string name, bool pass, string? detail = null)
     var envSettings = new AkiSpace.Services.SettingsService(Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance);
     var verifier = new EnvironmentVerifier(Microsoft.Extensions.Logging.Abstractions.NullLogger<EnvironmentVerifier>.Instance, mgr, envSettings);
     var checks = verifier.RunAllChecks();
-    Check("EnvVerifier ran all 10 checks", checks.Count == 10, $"got {checks.Count}");
+    Check("EnvVerifier ran all 11 checks", checks.Count == 11, $"got {checks.Count}");
     foreach (var c in checks)
     {
         Console.WriteLine($"[ENV] {c.Name}: {(c.Pass ? "PASS" : "FAIL")} — {c.Detail}");
