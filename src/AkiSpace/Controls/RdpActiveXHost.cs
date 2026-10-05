@@ -260,6 +260,15 @@ public sealed class RdpActiveXHost : AxHost
         bool smartSizing, bool keyboardHookToRemote, bool audioRedirected,
         string? userName, string? password, bool useChildSession)
     {
+        // A Disconnect that lands between retry attempts cancels the CTS while this
+        // delegate is already queued on the UI thread — honoring the cancel here is
+        // what makes "Disconnect during backoff" actually stop the connect.
+        var cts = Volatile.Read(ref _connectCts);
+        if (cts is { IsCancellationRequested: true })
+        {
+            _logger.LogInformation("Connect attempt cancelled before start (user disconnect)");
+            return false;
+        }
         try
         {
             // Force the ActiveX to fully initialize (BetterGI's GetRequiredOcx
@@ -481,20 +490,25 @@ public sealed class RdpActiveXHost : AxHost
     private static RdpCom.IMsRdpClientNonScriptable GetNonScriptable(object ocx)
     {
         var pUnknown = System.Runtime.InteropServices.Marshal.GetIUnknownForObject(ocx);
+        var pInterface = IntPtr.Zero;
         try
         {
             var iid = new Guid("2F079C4C-87B2-4AFD-97AB-20CDB43038AE");
-            var hr = System.Runtime.InteropServices.Marshal.QueryInterface(pUnknown, ref iid, out var pInterface);
+            var hr = System.Runtime.InteropServices.Marshal.QueryInterface(pUnknown, ref iid, out pInterface);
             if (hr != 0)
             {
                 throw new System.Runtime.InteropServices.COMException(
                     $"IMsRdpClientNonScriptable not available (HRESULT 0x{hr:X8})", hr);
             }
+            // GetObjectForIUnknown takes its OWN reference for the RCW; the QI'd
+            // pointer must be released here or one raw reference leaks per call.
             return (RdpCom.IMsRdpClientNonScriptable)
                 System.Runtime.InteropServices.Marshal.GetObjectForIUnknown(pInterface);
         }
         finally
         {
+            if (pInterface != IntPtr.Zero)
+                System.Runtime.InteropServices.Marshal.Release(pInterface);
             System.Runtime.InteropServices.Marshal.Release(pUnknown);
         }
     }
@@ -846,23 +860,21 @@ public sealed class RdpActiveXHost : AxHost
                 }
             case 22: // OnLogonError (correct DispId = 22, was wrongly 23)
                 {
-                    _connecting = false;
-                    IsConnected = false;
                     var code = args.Length > 0 ? Convert.ToInt32(args[0]) : -1;
                     _logger.LogError("RDP logon error {Code}", code);
 
                     // Non-terminal logon events (per BetterGI's IsNonTerminalLogonEvent):
                     // -5, -4, -2, 3 are intermediate logon events where the user is prompted
-                    // but the connection can still succeed. Only terminal logon errors should
-                    // show an error dialog and set IsConnected = false.
+                    // but the connection can still succeed — leave the connection state
+                    // untouched (the state clears only for terminal errors).
                     if (code is -5 or -4 or -2 or 3)
                     {
                         _logger.LogInformation("RDP non-terminal logon event {Code}, continuing", code);
-                        // Don't show error dialog, don't mark as disconnected, connection continues
                     }
                     else
                     {
-                        _logger.LogError("RDP logon error {Code}", code);
+                        _connecting = false;
+                        IsConnected = false;
                         ConnectionFailed?.Invoke($"登录失败（错误代码 {code}）");
                     }
                     break;

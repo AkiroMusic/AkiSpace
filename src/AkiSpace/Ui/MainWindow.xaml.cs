@@ -69,13 +69,30 @@ public partial class MainWindow : Window
     private void BindController()
     {
         _controller.ConnectStateChanged += ApplyConnectState;
-        _controller.ChildSessionStatusChanged += line => Dispatcher.Invoke(() => SetStatus(LblChildSession, DotChildSession, line));
-        _controller.WrapperStatusChanged += line => Dispatcher.Invoke(() => SetStatus(LblWrapper, DotWrapper, line));
-        _controller.PerformanceStatusChanged += text => Dispatcher.Invoke(() => LblPerformance.Text = text);
+        _controller.ChildSessionStatusChanged += OnChildSessionStatus;
+        _controller.WrapperStatusChanged += OnWrapperStatus;
+        _controller.PerformanceStatusChanged += OnPerformanceStatus;
         _controller.RdpHostChanged += OnRdpHostChanged;
-        _controller.FullScreenRequested += () => Dispatcher.Invoke(EnterFullScreen);
-        _controller.LeaveFullScreenRequested += () => Dispatcher.Invoke(LeaveFullScreen);
+        _controller.FullScreenRequested += OnFullScreenRequested;
+        _controller.LeaveFullScreenRequested += OnLeaveFullScreenRequested;
     }
+
+    private void UnbindController()
+    {
+        _controller.ConnectStateChanged -= ApplyConnectState;
+        _controller.ChildSessionStatusChanged -= OnChildSessionStatus;
+        _controller.WrapperStatusChanged -= OnWrapperStatus;
+        _controller.PerformanceStatusChanged -= OnPerformanceStatus;
+        _controller.RdpHostChanged -= OnRdpHostChanged;
+        _controller.FullScreenRequested -= OnFullScreenRequested;
+        _controller.LeaveFullScreenRequested -= OnLeaveFullScreenRequested;
+    }
+
+    private void OnChildSessionStatus(StatusLine line) => Dispatcher.Invoke(() => SetStatus(LblChildSession, DotChildSession, line));
+    private void OnWrapperStatus(StatusLine line) => Dispatcher.Invoke(() => SetStatus(LblWrapper, DotWrapper, line));
+    private void OnPerformanceStatus(string text) => Dispatcher.Invoke(() => LblPerformance.Text = text);
+    private void OnFullScreenRequested() => Dispatcher.Invoke(EnterFullScreen);
+    private void OnLeaveFullScreenRequested() => Dispatcher.Invoke(LeaveFullScreen);
 
     private void ApplyConnectState(ConnectUiState s)
     {
@@ -94,24 +111,45 @@ public partial class MainWindow : Window
     /// The MSTSC ActiveX disables its owner chain while connecting/connected — observed
     /// as the whole main window becoming WS_DISABLED after a child-session login, which
     /// makes the title-bar X (and CloseMainWindow) silently dead. RefreshStatus calls
-    /// this every second; re-enable when something disabled us. No-op when healthy.
+    /// this every second; re-enable when something disabled us. Skipped while any other
+    /// window of this thread is open (modal dialogs, MessageBoxes, popups) — blindly
+    /// re-enabling would let clicks through behind a "modal" dialog.
     /// </summary>
     private void EnsureWindowEnabled()
     {
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd != IntPtr.Zero && !User32.IsWindowEnabled(hwnd))
-            {
-                User32.EnableWindow(hwnd, true);
-                AppShellServices.LoggerFor<MainWindow>()
-                    .LogWarning("Main window was disabled (ActiveX owner-disable); re-enabled");
-            }
+            if (hwnd == IntPtr.Zero || User32.IsWindowEnabled(hwnd)) return;
+            if (HasOpenThreadWindow(hwnd)) return;
+            User32.EnableWindow(hwnd, true);
+            AppShellServices.LoggerFor<MainWindow>()
+                .LogWarning("Main window was disabled (ActiveX owner-disable); re-enabled");
         }
         catch (Exception ex)
         {
             AppShellServices.LoggerFor<MainWindow>().LogDebug(ex, "EnsureWindowEnabled failed");
         }
+    }
+
+    /// <summary>True when any visible window of THIS UI thread other than
+    /// <paramref name="mainHwnd"/> exists (WPF ShowDialog, native MessageBox, popups).</summary>
+    private bool HasOpenThreadWindow(IntPtr mainHwnd)
+    {
+        var mainThreadId = User32.GetWindowThreadProcessId(mainHwnd, out _);
+        var found = false;
+        User32.EnumWindows((h, _) =>
+        {
+            if (h == mainHwnd || !User32.IsWindowVisible(h)) return true;
+            uint pid;
+            if (User32.GetWindowThreadProcessId(h, out pid) == mainThreadId)
+            {
+                found = true;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
     }
 
     private void OnRdpHostChanged(RdpActiveXHost? host)
@@ -169,8 +207,8 @@ public partial class MainWindow : Window
     {
         var settings = new SettingsWindow(AppShellServices.Settings);
         settings.Owner = this;
-        settings.ShowDialog();
-        _controller.SetStatusText("Conn_SettingsSaved");
+        var saved = settings.ShowDialog() == true;
+        if (saved) _controller.SetStatusText("Conn_SettingsSaved");
     }
 
     private void OnGitHubLink(object sender, RoutedEventArgs e) =>
@@ -279,8 +317,10 @@ public partial class MainWindow : Window
         if (msg is WM_QUERYENDSESSION or WM_ENDSESSION)
         {
             // Windows is shutting down — the later Closing must NOT log off the child
-            // session (same semantic as WinForms CloseReason != UserClosing).
-            _sessionEnding = true;
+            // session (same semantic as WinForms CloseReason != UserClosing). A
+            // CANCELLED shutdown (WM_ENDSESSION, wParam FALSE) must restore the flag,
+            // or a later user close would silently skip LogoffOnExit.
+            _sessionEnding = wParam != IntPtr.Zero;
         }
         return IntPtr.Zero;
     }
@@ -292,7 +332,7 @@ public partial class MainWindow : Window
     {
         Loc.LanguageChanged -= OnLanguageChangedUi;
         _toastTimer?.Stop();
-        _controller.ConnectStateChanged -= ApplyConnectState;
+        UnbindController();
         base.OnClosed(e);
     }
 }

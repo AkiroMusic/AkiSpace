@@ -5,10 +5,10 @@ using Microsoft.Extensions.Logging;
 namespace AkiSpace;
 
 /// <summary>
-/// File logger provider backed by a single persistent <see cref="StreamWriter"/>.
-/// Replaces the old open/append/close-per-line pattern (which churned file handles)
-/// with a buffered writer flushed per line, prunes stale daily logs on construction,
-/// and makes the minimum log level configurable.
+/// File logger provider backed by a single persistent <see cref="StreamWriter"/>
+/// flushed per line (one handle for the process lifetime — open/close per line
+/// would churn handles), pruning stale daily logs on construction, with a
+/// configurable minimum log level.
 /// </summary>
 internal sealed class FileLoggerProvider : ILoggerProvider
 {

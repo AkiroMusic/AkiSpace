@@ -46,8 +46,12 @@ public sealed class HotkeyManager : IDisposable
         }
         try
         {
-            _window = new HotkeyWindow();
+            // Reuse the existing hidden window on re-registration (enable → disable →
+            // enable cycles must not stack orphaned message windows).
+            _window ??= new HotkeyWindow();
+            _window.HotkeyPressed -= HandleHotkey;
             _window.HotkeyPressed += HandleHotkey;
+            UnregisterAllKeys();
 
             if (!_window.Register(HOTKEY_TOGGLE_CONNECT, MOD_CONTROL | MOD_SHIFT, VK_D))
             {
@@ -76,6 +80,27 @@ public sealed class HotkeyManager : IDisposable
         {
             _logger.LogError(ex, "Failed to register global hotkeys");
         }
+    }
+
+    /// <summary>Re-applies the persisted EnableGlobalHotkey setting immediately:
+    /// registers when on, unregisters when off — no restart needed.</summary>
+    public void ApplyEnabled()
+    {
+        if (_settingsService.Current.EnableGlobalHotkey)
+        {
+            if (!_registered) Register();
+        }
+        else if (_registered)
+        {
+            Unregister();
+            _logger.LogInformation("Global hotkeys disabled by settings");
+        }
+    }
+
+    private void UnregisterAllKeys()
+    {
+        try { _window?.UnregisterAll(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Failed to unregister existing hotkeys"); }
     }
 
     public void Unregister()

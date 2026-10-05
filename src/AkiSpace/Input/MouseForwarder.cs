@@ -247,7 +247,11 @@ public sealed class MouseForwarder : IDisposable
             // All probing (key state, UI callbacks) happens OUTSIDE the lock: the raw
             // input thread takes the same lock per mouse event, and holding it across
             // GetAsyncKeyState / focus checks would stall input dispatch for the whole
-            // probe. The locked section only applies the resulting state transition.
+            // probe. The locked section applies the resulting state transition — and
+            // ALSO performs the capture, so a SetGameMouseModeEnabled(false) running
+            // between the check and the capture cannot be undone by an in-flight tick
+            // (mode-off would Release, then this tick would Capture again, leaving the
+            // cursor stuck clipped+hidden with no timer left to release it).
             var altPressed = (User32.GetAsyncKeyState(InputConstants.VK_LMENU) & InputConstants.KEY_PRESSED) != 0 ||
                              (User32.GetAsyncKeyState(InputConstants.VK_RMENU) & InputConstants.KEY_PRESSED) != 0;
             bool rdpFocused = _isRdpFocused?.Invoke() == true;
@@ -275,12 +279,12 @@ public sealed class MouseForwarder : IDisposable
                 }
 
                 if (!_forwardingActive) return;
-            }
 
-            var bounds = _getCaptureBounds?.Invoke() ?? default;
-            if (bounds.Width > 0 && !_cursorCapture.IsCapturing)
-            {
-                _cursorCapture.Capture(bounds);
+                var bounds = _getCaptureBounds?.Invoke() ?? default;
+                if (bounds.Width > 0 && !_cursorCapture.IsCapturing)
+                {
+                    _cursorCapture.Capture(bounds);
+                }
             }
         }
         catch (Exception ex)

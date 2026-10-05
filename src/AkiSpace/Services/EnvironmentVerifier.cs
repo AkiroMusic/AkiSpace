@@ -274,8 +274,13 @@ public sealed class EnvironmentVerifier
                 Microsoft.Win32.RegistryView.Registry64);
             using var k = baseKey.OpenSubKey(key);
             var serviceDll = k?.GetValue(valueName) as string;
+            // Match BOTH wrapper families: sergiye's TermWrap.dll and classic
+            // stascorp rdpwrap.dll replace ServiceDll the same way, and both break
+            // the child-session broker (keep in sync with
+            // RdpWrapperInstaller.IsWrapperHookInstalled).
             var hooked = !string.IsNullOrEmpty(serviceDll)
-                         && serviceDll.IndexOf("TermWrap", StringComparison.OrdinalIgnoreCase) >= 0;
+                         && (serviceDll.IndexOf("TermWrap", StringComparison.OrdinalIgnoreCase) >= 0
+                             || serviceDll.IndexOf("rdpwrap", StringComparison.OrdinalIgnoreCase) >= 0);
             if (hooked)
             {
                 return new(

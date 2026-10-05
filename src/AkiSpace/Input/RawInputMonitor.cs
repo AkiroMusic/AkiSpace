@@ -100,22 +100,28 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     {
         if (_thread == null || !_thread.IsAlive) return null;
         var dying = _thread;
-        // Snapshot _hwnd under _hwndLock so a concurrent ThreadMain that is
-        // mid-create doesn't have its handle zeroed out from under us before
-        // we Post WM_QUIT. Capture the value to use after releasing the lock.
-        IntPtr hwnd;
-        lock (_hwndLock)
-        {
-            hwnd = _hwnd;
-            // Clear the field so a quick restart doesn't try to PostMessage
-            // to a window owned by the old (dying) thread.
-            _hwnd = IntPtr.Zero;
-        }
-        if (hwnd != IntPtr.Zero)
-        {
-            User32.PostMessage(hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
-        }
         _thread = null;
+        // A Stop landing during the worker's window creation (thread.Start →
+        // HiddenWindowHost.Handle publish) would read _hwnd == Zero, post no
+        // WM_QUIT, and orphan an unstoppable monitor. We run under _gate, so no
+        // replacement thread can start while we spin — the only writer is the
+        // dying worker publishing its handle; ~200 ms covers creation worst case.
+        for (var i = 0; i < 40; i++)
+        {
+            IntPtr hwnd;
+            lock (_hwndLock)
+            {
+                hwnd = _hwnd;
+                if (hwnd != IntPtr.Zero) _hwnd = IntPtr.Zero;
+            }
+            if (hwnd != IntPtr.Zero)
+            {
+                User32.PostMessage(hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+                break;
+            }
+            if (!dying.IsAlive) break;
+            Thread.Sleep(5);
+        }
         _logger.LogInformation("Raw input monitor stopped");
         return dying;
     }
