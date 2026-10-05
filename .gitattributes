@@ -1,87 +1,36 @@
-# Auto detect text files and perform LF normalization
+# Normalize line endings: everything textual is LF in the repo; Windows-native
+# script formats are checked out as CRLF.
 * text=auto
 
-# C# source files
+# Source
 *.cs text
+*.xaml text
 *.csproj text
-*.sln text
+*.slnx text
+*.manifest text
 
 # Documentation
 *.md text
 *.txt text
+LICENSE text
 
 # Configuration
 *.json text
-*.jsonc text
-*.xml text
-*.config text
-*.config.template text
-*.props text
-*.targets text
+*.yml text
+.editorconfig text
+.gitattributes text
+.gitignore text
 
 # Scripts
-*.ps1 text
-*.psm1 text
+*.ps1 text eol=crlf
 *.sh text eol=lf
-*.bat text eol=crlf
 *.cmd text eol=crlf
+*.bat text eol=crlf
 
-# Documentation
-*.md text
-*.markdown text
-
-# Images - binary
+# Binary assets
 *.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
 *.ico binary
-*.svg binary
-*.bmp binary
-
-# Fonts
-*.ttf binary
-*.woff binary
-*.woff2 binary
-*.eot binary
-
-# Archives
-*.zip binary
-*.tar.gz binary
-*.7z binary
-
-# Binaries
 *.exe binary
 *.dll binary
 *.pdb binary
-*.so binary
-*.dylib binary
-
-# Certificates
-*.pfx binary
-*.cer binary
-*.p12 binary
-*.crt binary
-*.key binary
-
-# Databases
-*.db binary
-*.sqlite binary
-*.sqlite3 binary
-
-# Archives
 *.zip binary
-*.tar.gz binary
-*.tgz binary
-*.rar binary
-
-# Certificates
-*.pfx binary
-*.cer binary
-*.p12 binary
-*.crt binary
-*.key binary
-
-# Database
-*.mdf binary
-*.ldf binary
