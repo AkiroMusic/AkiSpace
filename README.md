@@ -8,6 +8,8 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 
 ![AkiSpace main window — Aurora Glass dark theme](docs/screenshot-main.png)
 
+📖 **Technical Notes / 技术文档**: [TECHNICAL.md](TECHNICAL.md) — architecture, IPC protocol, input pipeline, security model / 架构、IPC 协议、输入管线、安全模型
+
 ---
 
 ## Features
@@ -201,6 +203,8 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 - **子会话（ChildSession）**：用当前账户创建 Windows 子会话，与 BetterGI 桌面分身效果相同
 
 ![AkiSpace 主窗口 — Aurora Glass 深色主题](docs/screenshot-main.png)
+
+📖 **技术文档 / Technical Notes**: [TECHNICAL.md](TECHNICAL.md)——架构、IPC 协议、输入管线、安全模型
 
 ---
 
