@@ -97,6 +97,15 @@ public sealed class ConnectionController
     // failure events are logged only.
     private long _userDisconnectAt;
 
+    // A dial that neither completes nor fires OnDisconnected (observed: a wedged
+    // child-session broker) would otherwise hold the UI in "connecting" forever.
+    // TickCount64 (ms) deadline for the current connect; 0 = no connect in flight.
+    private long _connectDeadline;
+    private const int ConnectTimeoutMs = 30_000;
+    // The port the current attempt dials (status args are cleared on terminal states,
+    // but the failure dialog needs it for the port-mismatch diagnosis).
+    private int _lastDialPort;
+
     // Previous GetSystemTimes sample for the 1 Hz system-CPU delta (the status
     // bar shows Task-Manager-comparable machine numbers, not this process's).
     private ulong _prevIdleTime;
@@ -281,11 +290,21 @@ public sealed class ConnectionController
 
             _rdpHost.CreateControl();
 
-            var port = settings.RdpPort is > 0 and not 3389
-                ? settings.RdpPort
-                : _sessionManager.GetConfiguredRdpPort();
+            // Standard-RDP mode honors the settings override (a custom listener port);
+            // child-session mode ALWAYS dials the OS-configured port — the broker is
+            // bound to the system's own RDP-Tcp configuration, and a stale settings
+            // override would dial a port the broker never listens on.
+            var port = settings.ConnectionMode == ConnectionMode.ChildSession
+                ? _sessionManager.GetConfiguredRdpPort()
+                : settings.RdpPort is > 0 and not 3389
+                    ? settings.RdpPort
+                    : _sessionManager.GetConfiguredRdpPort();
 
             SetStatusText("Conn_Connecting", StatusLevel.InFlight, $"127.0.0.1:{port}");
+            // Arm the connect timeout: a wedged broker (or any dial that neither
+            // completes nor fires OnDisconnected) must not hold the UI forever.
+            _lastDialPort = port;
+            _connectDeadline = Environment.TickCount64 + ConnectTimeoutMs;
 
             _defer(() => _defer(() =>
             {
@@ -364,6 +383,7 @@ public sealed class ConnectionController
     {
         _connecting = false;
         _isConnected = false;
+        Volatile.Write(ref _connectDeadline, 0);
         _connectEnabled = true;
         _disconnectEnabled = false;
         _terminateEnabled = false;
@@ -778,6 +798,7 @@ public sealed class ConnectionController
     {
         if (_closing) return;
         _logger.LogInformation("RDP login complete event");
+        Volatile.Write(ref _connectDeadline, 0);
         _statusKey = "Conn_Ready";
         _statusLevel = StatusLevel.Good;
         _statusArgs = [];
@@ -839,6 +860,7 @@ public sealed class ConnectionController
             return;
         }
         _logger.LogWarning("RDP connection failed: {Reason}", reason);
+        Volatile.Write(ref _connectDeadline, 0);
         ResetConnectUi("Conn_Failed");
 
         // The ActiveX connect helper fires ConnectionFailed once per retry attempt
@@ -848,7 +870,16 @@ public sealed class ConnectionController
         if (reason == _lastFailureReason && now - _lastFailureDialogAt < 15000) return;
         _lastFailureReason = reason;
         _lastFailureDialogAt = now;
-        System.Windows.Forms.MessageBox.Show(reason, Loc.T("Box_ConnectFailTitle"),
+        // Enrich the dialog with the two facts that most often explain a failed
+        // child-session dial: a wrapper hook on TermService, and the port actually
+        // dialed vs. the OS-configured one.
+        var hook = _environmentVerifier.CheckRdpWrapperHook();
+        var osPort = _sessionManager.GetConfiguredRdpPort();
+        var portMatch = _lastDialPort == osPort;
+        var enriched = reason + "\n诊断信息：\n"
+            + $"  ServiceDll hook: {(hook.Pass ? "未检测到 ✓" : hook.Detail)}\n"
+            + $"  拨号端口: {_lastDialPort}  系统配置端口: {osPort}{(portMatch ? " ✓" : " ⚠ 不一致")}";
+        System.Windows.Forms.MessageBox.Show(enriched, Loc.T("Box_ConnectFailTitle"),
             System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
     }
 
@@ -888,6 +919,25 @@ public sealed class ConnectionController
             {
                 RefreshRdpHandles();
                 var connected = _rdpHost.GetConnectedState();
+                var deadline = Volatile.Read(ref _connectDeadline);
+                if (_connecting && connected)
+                {
+                    // Login completed between events — lift the in-flight gate here so
+                    // the poll's own status assignment below is consistent with state.
+                    _connecting = false;
+                }
+                if (_connecting && deadline != 0 && Environment.TickCount64 > deadline)
+                {
+                    // The dial never completed and never fired OnDisconnected (wedged
+                    // broker) — tear the attempt down and surface a terminal state
+                    // instead of holding "connecting" forever.
+                    _logger.LogWarning("Connect timed out after {Seconds}s (no login event, Connected={Connected})",
+                        ConnectTimeoutMs / 1000, connected);
+                    Volatile.Write(ref _connectDeadline, 0);
+                    ResetConnectUi("Conn_Timeout");
+                    TearDownRdpHost();
+                    return;
+                }
                 // While connecting, the in-flight status ("connecting to …", amber dot)
                 // must stand: GetConnectedState() is false for the whole negotiation and
                 // the poll would otherwise overwrite it with "not connected". Same for
@@ -910,6 +960,10 @@ public sealed class ConnectionController
                     // Settled earlier than expected — lift the suppression immediately.
                     Volatile.Write(ref _disconnectPollSuppressUntil, 0);
                 }
+            }
+            else if (!_connecting && Volatile.Read(ref _connectDeadline) != 0)
+            {
+                Volatile.Write(ref _connectDeadline, 0);
             }
 
             if (_settingsService.Current.ShowPerformance)
