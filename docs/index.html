@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en" data-pack="aurora">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AkiSpace — A second desktop on one machine</title>
+<meta name="description" content="Create a second independent desktop session on a single Windows machine — run full-screen apps, games and automation in the clone while your main desktop keeps working normally.">
+<meta property="og:title" content="AkiSpace — A second desktop on one machine">
+<meta property="og:description" content="Create a second independent desktop session on a single Windows machine — run full-screen apps, games and automation in the clone while your main desktop keeps working normally.">
+<meta property="og:url" content="https://akiromusic.github.io/AkiSpace/">
+<meta property="og:image" content="https://raw.githubusercontent.com/AkiroMusic/AkiSpace/main/docs/assets/screenshot-main.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..700&family=IBM+Plex+Mono:wght@400;600&family=Plus+Jakarta+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/tokens.css">
+
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="aurora-bg"></div>
+<div class="aurora-sweep"></div>
+<div class="star-field"></div>
+<div class="noise-overlay"></div>
+
+<header class="site-nav material-frosted">
+  <a class="brand" href="#"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>AkiSpace</a>
+  <nav>
+    <a href="#features">Features</a>
+    <a href="#details">Details</a>
+    <a href="https://github.com/AkiroMusic/AkiSpace" class="nav-keep">GitHub ↗</a>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <div class="hero-card panel-contrast material-film flow-nebula spring-in">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Windows Desktop Tool · WPF / .NET 8</div>
+      <h1>Aki<span class="grad-text">Space</span></h1>
+      <p class="tagline">Create a second independent desktop session on a single Windows machine — run full-screen apps, games and automation in the clone while your main desktop keeps working normally.</p>
+      <div class="badge-row"><span class="badge">License <b>MIT</b></span><span class="badge">Platform <b>Windows 10 / 11</b></span><span class="badge">Framework <b>WPF · .NET 8</b></span><span class="badge">Architecture <b>Multi-session RDP · MSTSC ActiveX</b></span></div>
+      <div class="cta-row">
+          <a class="btn btn-primary" href="https://github.com/AkiroMusic/AkiSpace/releases/latest">Download latest</a>
+          <a class="btn btn-ghost" href="https://github.com/AkiroMusic/AkiSpace">Source code</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="features">
+    <div class="block-head">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Features</div>
+      <h2>What it does</h2>
+      <p class="sub">AkiSpace (&quot;Desktop Clone&quot;) is built on Windows multi-session RDP (unlocked via RDP Wrapper/TermWrap), an embedded MSTSC ActiveX viewer and cross-session input forwarding, with two connection modes: Standard RDP over a separate local account, or a Windows child session (identical to BetterGI&#x27;s technique). Ships as a WPF app with an Aurora Glass UI, bilingual interface and system tray integration.</p>
+    </div>
+    <div class="feature-grid">
+          <article class="feature-card material-liquid double-bezel spring-in wide" style="animation-delay:80ms"><div class="f-icon">🖥️</div><h3>One-click clone</h3><p>Click Connect or press Ctrl+Shift+D to instantly connect; the embedded window shows the clone desktop live.</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:140ms"><div class="f-icon">📋</div><h3>Clone screenshot</h3><p>Toolbar button, tray item or Ctrl+Shift+S captures the clone desktop straight to the host clipboard (Bitmap + PNG formats).</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:200ms"><div class="f-icon">🌌</div><h3>Aurora Glass UI</h3><p>Four switchable color packs — Aurora Dusk &amp; Amber Afterglow (dark), Mint Fresh &amp; Pearl Blush (light) — with live preview, an animated aurora backdrop and liquid-glass cards.</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:260ms"><div class="f-icon">🌐</div><h3>Bilingual UI (EN / 中文)</h3><p>The entire interface — windows, dialogs, tray menu, even the elevated fix console — switches with one click on the toolbar globe button; the choice persists.</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:320ms"><div class="f-icon">🔀</div><h3>Dual connection modes</h3><p>Standard RDP (separate local account) or Child Session (same user, BetterGI-style) — switch in Settings.</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:380ms"><div class="f-icon">🖱️</div><h3>Game mouse mode</h3><p>Host relative mouse motion is captured and forwarded to the clone session by an auto-launched replay agent, with cursor auto-clip &amp; hide; hold Alt to temporarily release the cursor back.</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:440ms"><div class="f-icon">🩺</div><h3>Environment check / repair</h3><p>One-click detection &amp; repair for RDP status, multi-session, RDP Wrapper, StartRCM and firewall, with a mode-aware verdict; standard RDP can be unlocked with one click (SHA-256-verified pinned download).</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:500ms"><div class="f-icon">📊</div><h3>Monitor, tray &amp; launch</h3><p>System-wide CPU &amp; memory in the status bar; minimize to tray with global hotkeys, and launch programs inside the clone via Task Scheduler with admin rights.</p></article>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Screenshot</div>
+    </div>
+    <div class="shot-frame material-liquid double-bezel spring-in">
+      <img src="assets/screenshot-main.png" alt="AkiSpace main window" loading="lazy">
+    </div>
+  </section>
+
+  <section class="block" id="details">
+    <div class="block-head">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Details</div>
+      <h2>Architecture</h2>
+    </div>
+    <div class="detail-card material-liquid double-bezel"><table class="detail-table"><thead><tr><th>Component</th><th>File</th><th>Responsibility</th></tr></thead><tbody><tr><td>Session Mgmt</td><td>Native/WtsApi.cs</td><td>WTS session query/listen status</td></tr><tr><td>Input Interop</td><td>Native/User32.cs</td><td>Raw Input, SendInput, ClipCursor, GUI thread info</td></tr><tr><td>RDP Viewer</td><td>Controls/RdpActiveXHost.cs</td><td>AxHost wraps MsRdpClient11, dual-mode connect (StdRDP/ChildSession), retry logic</td></tr><tr><td>IPC</td><td>Ipc/Pipes.cs, Ipc/IpcProtocol.cs</td><td>Named Pipes + Binary Frame Protocol</td></tr><tr><td>Mouse Capture</td><td>Input/RawInputMonitor.cs</td><td>Dedicated STA thread, RIDEV_INPUTSINK</td></tr><tr><td>Mouse Forward</td><td>Input/MouseForwarder.cs</td><td>Accumulate/direction-reverse flush/10ms batch/Alt release</td></tr><tr><td>Cursor Mgmt</td><td>Input/CursorCapture.cs</td><td>ClipCursor + ShowCursor(false) paired restore</td></tr><tr><td>Elevated Launch</td><td>Services/ProcessLauncher.cs</td><td>Task Scheduler COM (TASK_RUN_USE_SESSION_ID)</td></tr><tr><td>Env Check</td><td>Services/EnvironmentVerifier.cs</td><td>10 prerequisite checks/fixes</td></tr></tbody></table></div>
+  </section>
+
+  <section class="block" id="quick-start">
+    <div class="block-head">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Quick Start</div>
+      <h2>Set up the clone</h2>
+    </div>
+    <div class="qs-grid">
+      <div class="qs-steps material-liquid double-bezel spring-in">
+        <ol><li><b>Download</b> the latest release, or build from source with the command below (needs .NET 8 Desktop Runtime or SDK).</li><li>Windows <b>Home</b>: install an RDP unlock layer, then run in-app <b>Environment Check → One-Click Fix</b> until every check passes.</li><li>Create a password-protected local account for the clone (Standard RDP mode; Child Session uses your current account and needs none).</li><li>Press <b>Ctrl+Shift+D</b> — the embedded window shows the clone desktop; click <b>Launch Program</b> to run apps inside it.</li></ol>
+      </div>
+      <div class="code-card panel-contrast spring-in" style="animation-delay:80ms">
+        <div class="code-title"><span class="dot"></span>shell</div>
+        <pre>dotnet build src/AkiSpace/AkiSpace.csproj
+
+# Clone account (Standard RDP mode)
+net user AkiSpaceUser &lt;your-password&gt; /add
+net localgroup Administrators AkiSpaceUser /add</pre>
+      </div>
+    </div>
+  </section>
+
+  
+
+  <div class="hairline"></div>
+
+  <section class="block i18n-cn" id="中文" lang="zh-CN">
+    <div class="block-head">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>Windows 桌面工具 · WPF / .NET 8</div>
+      <h2>项目简介</h2>
+      <p class="sub">AkiSpace（桌面分身）构建于 Windows 多会话 RDP（经 RDP Wrapper/TermWrap 解锁）、内嵌 MSTSC ActiveX 查看器与跨会话输入转发之上，支持两种连接模式：独立本地账户的标准 RDP，或与 BetterGI 同款的 Windows 子会话。以 WPF 应用交付，配有 Aurora Glass 界面、中英双语与系统托盘集成。</p>
+    </div>
+    <div class="feature-grid">
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:80ms"><div class="f-icon">🖥️</div><h3>一键连接分身</h3><p>点击「连接」或按 Ctrl+Shift+D 立即连接，内嵌窗口实时显示分身桌面。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:140ms"><div class="f-icon">📋</div><h3>一键截屏分身</h3><p>工具栏按钮、托盘菜单或 Ctrl+Shift+S 把分身桌面直接截取到主系统剪贴板（同时含 Bitmap 与 PNG 两种格式）。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:200ms"><div class="f-icon">🌌</div><h3>Aurora Glass 界面</h3><p>四套可切换配色包——极光暮色 / 琥珀霞光（深色）、薄荷清新 / 珍珠雾粉（浅色），设置内即时预览；极光动效背景与液态玻璃卡片。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:260ms"><div class="f-icon">🌐</div><h3>中英双语界面</h3><p>整个界面——窗口、对话框、托盘菜单乃至管理员修复控制台——由工具栏地球按钮一键切换，选择持久化。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:320ms"><div class="f-icon">🔀</div><h3>双连接模式</h3><p>「标准 RDP」（独立本地账户）与「子会话」（当前账户，BetterGI 同款）在设置中切换。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:380ms"><div class="f-icon">🖱️</div><h3>游戏鼠标模式</h3><p>捕获主桌面相对鼠标移动，由自动启动的回放 Agent 转发到分身会话，光标自动裁剪/隐藏；按住 Alt 临时释放光标回主桌面。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:440ms"><div class="f-icon">🩺</div><h3>环境检查/修复</h3><p>一键检测并修复 RDP 状态、多会话、RDP Wrapper、StartRCM、防火墙等前置条件，给出模式感知结论；标准 RDP 支持一键解锁（下载钉定版本并按 SHA-256 校验）。</p></article>
+          <article class="feature-card material-liquid double-bezel spring-in" style="animation-delay:500ms"><div class="f-icon">📊</div><h3>监控、托盘与启动</h3><p>状态栏实时显示系统级 CPU 与内存；最小化到托盘、全局热键，并可通过 Task Scheduler 以管理员权限在分身中启动程序。</p></article>
+    </div>
+    <div class="block-head" style="margin-top:var(--space-8)">
+      <div class="eyebrow"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>明细</div>
+      <h2>技术架构</h2>
+    </div>
+    <div class="detail-card material-liquid double-bezel"><table class="detail-table"><thead><tr><th>组件</th><th>文件</th><th>职责</th></tr></thead><tbody><tr><td>会话管理</td><td>Native/WtsApi.cs</td><td>WTS 会话查询/监听状态</td></tr><tr><td>输入互操作</td><td>Native/User32.cs</td><td>Raw Input, SendInput, ClipCursor, GUI 线程信息</td></tr><tr><td>RDP 查看器</td><td>Controls/RdpActiveXHost.cs</td><td>AxHost 封装 MsRdpClient11，双模式连接（标准RDP/子会话），重试连接</td></tr><tr><td>IPC</td><td>Ipc/Pipes.cs, Ipc/IpcProtocol.cs</td><td>命名管道 + 二进制帧协议</td></tr><tr><td>鼠标捕获</td><td>Input/RawInputMonitor.cs</td><td>独立 STA 线程，RIDEV_INPUTSINK</td></tr><tr><td>鼠标转发</td><td>Input/MouseForwarder.cs</td><td>累积/方向反转即刷/10ms 批处理/Alt 释放</td></tr><tr><td>光标管理</td><td>Input/CursorCapture.cs</td><td>ClipCursor + ShowCursor(false) 配对恢复</td></tr><tr><td>提权启动</td><td>Services/ProcessLauncher.cs</td><td>Task Scheduler COM (TASK_RUN_USE_SESSION_ID)</td></tr><tr><td>环境检查</td><td>Services/EnvironmentVerifier.cs</td><td>10 项前置条件检测/修复</td></tr></tbody></table></div>
+    <div class="qs-grid" style="margin-top:var(--space-8)">
+      <div class="qs-steps material-liquid double-bezel spring-in">
+        <ol><li><b>下载</b>最新版本，或用下方命令从源码构建（需要 .NET 8 Desktop Runtime 或 SDK）。</li><li>Windows <b>家庭版</b>：安装 RDP 解锁层，然后在应用内运行<b>环境检查 → 一键修复</b>，直至全部通过。</li><li>为分身创建一个带密码的本地账户（标准 RDP 模式；子会话模式使用当前账户，无需新建）。</li><li>按 <b>Ctrl+Shift+D</b>——内嵌窗口显示分身桌面；点击<b>启动程序</b>在分身中运行应用。</li></ol>
+      </div>
+      <div class="code-card panel-contrast spring-in" style="animation-delay:80ms">
+        <div class="code-title"><span class="dot"></span>shell</div>
+        <pre>dotnet build src/AkiSpace/AkiSpace.csproj
+
+# Clone account (Standard RDP mode)
+net user AkiSpaceUser &lt;your-password&gt; /add
+net localgroup Administrators AkiSpaceUser /add</pre>
+      </div>
+    </div>
+  </section>
+
+  
+
+  <footer class="site-footer">
+    <div class="footer-row material-liquid">
+      <div>
+        <a class="brand" href="#"><span class="star"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.9 6.5 4.6 10.2 12 12-7.4 1.8-11.1 5.5-12 12-.9-6.5-4.6-10.2-12-12C7.4 10.2 11.1 6.5 12 0z"/></svg></span>AkiSpace</a>
+        <p class="footer-meta" style="margin-top:var(--space-3);max-width:340px">Create a second independent desktop session on a single Windows machine — run full-screen apps, games and automation in the clone while your main desktop keeps working normally.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/AkiroMusic/AkiSpace">Source code ↗</a>
+        <a href="https://github.com/AkiroMusic/AkiSpace/releases/latest">Releases ↗</a>
+      </div>
+      <div class="footer-links">
+        <a href="https://akiromusic.com/">akiromusic.com ↗</a>
+        <a href="https://github.com/AkiroMusic">GitHub Profile ↗</a>
+        <a href="https://akiromusic.github.io/AkiroMusic/">All project sites ↗</a>
+      </div>
+    </div>
+    <p class="footer-meta">© 2026 Akiro · MIT licensed. Built with the Aurora Glass design system.</p>
+  </footer>
+
+</main>
+</body>
+</html>
