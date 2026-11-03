@@ -1,5 +1,6 @@
 # AkiSpace — Desktop Clone
 
+[![Website](https://img.shields.io/badge/site-akiromusic.github.io-6D82FF)](https://akiromusic.github.io/AkiSpace/)
 Create a second independent desktop session ("Desktop Clone") on a single Windows machine. Run full-screen apps/games/automation in the clone while your main desktop keeps working normally.
 
 **Architecture**: Windows **Multi-session RDP** (unlocked via RDP Wrapper/TermWrap) + embedded MSTSC ActiveX viewer + cross-session input forwarding. Supports two connection modes:
