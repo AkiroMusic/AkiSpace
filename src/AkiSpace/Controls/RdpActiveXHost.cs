@@ -184,12 +184,17 @@ public sealed class RdpActiveXHost : AxHost
 
                     try
                     {
-                        // Marshal the connect attempt to the UI thread
+                        // Marshal the connect attempt to the UI thread. The attempt's
+                        // OWN CTS is passed by parameter: a queued delegate must never
+                        // read the live _connectCts field, because a Disconnect+reconnect
+                        // between enqueue and execution would bind the stale attempt to
+                        // the NEW connection's (valid) token and let two connect flows
+                        // drive the same ActiveX control.
                         var ok = await InvokeOnUiThreadAsync(() =>
                             TryConnectCore(
                                 desktopWidth, desktopHeight, colorDepth, rdpPort,
                                 smartSizing, keyboardHookToRemote, audioRedirected,
-                                userName, password, useChildSession));
+                                userName, password, useChildSession, cts));
 
                         if (ok) return;
 
@@ -258,15 +263,16 @@ public sealed class RdpActiveXHost : AxHost
     private bool TryConnectCore(
         int desktopWidth, int desktopHeight, int colorDepth, int rdpPort,
         bool smartSizing, bool keyboardHookToRemote, bool audioRedirected,
-        string? userName, string? password, bool useChildSession)
+        string? userName, string? password, bool useChildSession,
+        CancellationTokenSource attemptCts)
     {
-        // A Disconnect that lands between retry attempts cancels the CTS while this
-        // delegate is already queued on the UI thread — honoring the cancel here is
-        // what makes "Disconnect during backoff" actually stop the connect.
-        var cts = Volatile.Read(ref _connectCts);
-        // NULL counts as cancelled: DisconnectSession nulls the field when it
-        // consumes the CTS, and a queued delegate must not connect after that.
-        if (cts is null || cts.IsCancellationRequested)
+        // A Disconnect that lands between retry attempts cancels THIS attempt's CTS
+        // while the delegate is already queued on the UI thread — honoring it here is
+        // what makes "Disconnect during backoff" actually stop the connect. Only the
+        // attempt's own CTS is consulted (see the call site): a replaced _connectCts
+        // field would alias the new connection's token. Reading IsCancellationRequested
+        // on a CTS that Dispose()d after Cancel is safe — the cancelled state survives.
+        if (attemptCts.IsCancellationRequested)
         {
             _logger.LogInformation("Connect attempt cancelled before start (user disconnect)");
             return false;

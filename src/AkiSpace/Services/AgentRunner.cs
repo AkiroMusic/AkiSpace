@@ -47,6 +47,15 @@ public sealed class AgentRunner
 
     /// <summary>
     /// Connects to the primary pipe and runs the replay loop until cancelled.
+    /// <para>
+    /// The connection is resilient: when the pipe drops while the primary is still
+    /// up (primary-side listener restart, transient failure), the runner retries
+    /// with 1/2/4/8 s exponential backoff against the SAME nonce — the primary only
+    /// rotates the nonce when it launches a NEW agent, and the primary's own restart
+    /// sweeps the old agent away, so a surviving agent reconnecting with its current
+    /// nonce is legitimate. An explicit handshake rejection means the nonce IS stale
+    /// (the primary relaunched) — retrying can never succeed, so the runner exits.
+    /// </para>
     /// </summary>
     public async Task RunAsync(byte[] nonce, CancellationToken ct = default)
     {
@@ -55,13 +64,27 @@ public sealed class AgentRunner
         var consumer = ConsumeBatchesAsync(ct);
         try
         {
-            await _pipeClient.ConnectAsync(ct).ConfigureAwait(false);
-            _logger.LogInformation("Agent runner started — replaying mouse batches");
-
-            // Keep alive until cancelled or disconnected.
-            while (!ct.IsCancellationRequested && _pipeClient.IsConnected)
+            var backoff = 0;
+            while (!ct.IsCancellationRequested)
             {
-                try { await Task.Delay(1000, ct).ConfigureAwait(false); }
+                var connected = await _pipeClient.ConnectAsync(ct).ConfigureAwait(false);
+                if (!connected) break; // explicit nonce rejection or cancellation — terminal
+
+                backoff = 0;
+                _logger.LogInformation("Agent runner connected — replaying mouse batches");
+
+                // Keep alive until the pipe drops or the process is cancelled.
+                while (_pipeClient.IsConnected && !ct.IsCancellationRequested)
+                {
+                    try { await Task.Delay(250, ct).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { break; }
+                }
+                if (ct.IsCancellationRequested) break;
+
+                var delay = TimeSpan.FromSeconds(1 << Math.Min(backoff++, 3));
+                _logger.LogWarning(
+                    "Pipe connection to the primary dropped; reconnecting in {Seconds}s", delay.TotalSeconds);
+                try { await Task.Delay(delay, ct).ConfigureAwait(false); }
                 catch (OperationCanceledException) { break; }
             }
         }

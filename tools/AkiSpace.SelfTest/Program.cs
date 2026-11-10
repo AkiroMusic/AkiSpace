@@ -226,11 +226,15 @@ void Check(string name, bool pass, string? detail = null)
 // via localhost, and waits for OnLoginComplete. This proves the full
 // ConnectToChildSession pipeline works.
 {
-    // Skip if non-interactive or no AkiSpaceUser account.
+    // Skip if non-interactive, no explicit run authorization, or no AkiSpaceUser account.
+    // Credentials alone are not an authorization switch: a dev machine that permanently
+    // carries AKISPACE_E2E_USER/PASSWORD must not silently run real RDP connects on an
+    // ordinary SelfTest invocation. AKISPACE_SELFTEST_ALLOW_E2E=1 is the explicit opt-in.
     var mgrCheck = new AkiSpace.Services.ChildSessionManager(
         Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.ChildSessionManager>.Instance);
     var canRunE2E = Environment.UserInteractive
         && Environment.GetEnvironmentVariable("CI") != "true"
+        && Environment.GetEnvironmentVariable("AKISPACE_SELFTEST_ALLOW_E2E") == "1"
         && mgrCheck.IsRdpListenerActive()
         // Credentials are NOT hardcoded (a public repo is not credential storage);
         // the real-connect test only runs when the operator provides them.
@@ -239,6 +243,7 @@ void Check(string name, bool pass, string? detail = null)
     if (!canRunE2E)
     {
         Console.WriteLine("[SKIP] E2E test: non-interactive session, RDP listener not active, " +
+                          "AKISPACE_SELFTEST_ALLOW_E2E != 1, " +
                           "or AKISPACE_E2E_USER / AKISPACE_E2E_PASSWORD not set");
     }
     else

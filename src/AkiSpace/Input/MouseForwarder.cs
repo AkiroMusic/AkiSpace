@@ -35,6 +35,11 @@ public sealed class MouseForwarder : IDisposable
     private bool _gameMouseModeEnabled;
     private bool _forwardingActive;
     private bool _noAgentWarned;
+    // Latched when the agent reports a batch it could not inject (SendInput
+    // blocked). While set, forwarding stays OFF and the cursor stays released —
+    // otherwise the 5 ms poll would immediately re-capture a cursor whose input
+    // goes nowhere, cycling release/re-capture around a dead pipe.
+    private bool _agentInputBlocked;
     private PipeConnection? _primaryConnection;
     private System.Threading.Timer? _pollTimer;
     private int _disposed;
@@ -94,6 +99,16 @@ public sealed class MouseForwarder : IDisposable
     }
 
     /// <summary>
+    /// True after the agent reported a batch it could not inject (Handled=false).
+    /// Forwarding stays disabled until a fresh agent connection or an explicit
+    /// re-enable — see <see cref="SetGameMouseModeEnabled"/>.
+    /// </summary>
+    public bool IsAgentInputBlocked
+    {
+        get { lock (_gate) return _agentInputBlocked; }
+    }
+
+    /// <summary>
     /// Enables or disables game-mouse forwarding. The pipe server keeps LISTENING in
     /// both states: stopping it would disconnect (and terminate) the already-running
     /// replay agent, and nothing re-launches the agent mid-session — an ON/OFF/ON
@@ -112,6 +127,10 @@ public sealed class MouseForwarder : IDisposable
 
             if (enabled)
             {
+                // An explicit (re-)enable is the user retrying after an injection
+                // failure — clear the latched block so the next healthy batch can
+                // flow again. (A new agent connection clears it too.)
+                _agentInputBlocked = false;
                 _subscription ??= _rawInputMonitor.Subscribe(OnRelativeMouseMoved);
                 _pipeServer.Start();
                 _pollTimer ??= new System.Threading.Timer(
@@ -164,14 +183,21 @@ public sealed class MouseForwarder : IDisposable
 
     private void OnClientConnected(PipeConnection connection)
     {
-        lock (_gate) _primaryConnection = connection;
+        lock (_gate)
+        {
+            _primaryConnection = connection;
+            // A fresh verified agent is a clean slate: clear a latched injection
+            // failure from the previous session.
+            _agentInputBlocked = false;
+        }
         _logger.LogInformation("Mouse pipe client connected");
-        connection.ResultReceived += OnResultReceived;
+        connection.ResultReceived += result => OnResultReceived(connection, result);
         connection.Disconnected += () =>
         {
             lock (_gate)
             {
-                _primaryConnection = null;
+                if (_primaryConnection == connection)
+                    _primaryConnection = null;
                 // Drop any in-flight accumulation — replaying stale deltas after a
                 // reconnect would teleport the clone cursor.
                 _accumulatedX = _accumulatedY = 0;
@@ -181,15 +207,26 @@ public sealed class MouseForwarder : IDisposable
         };
     }
 
-    private void OnResultReceived(RelativeMouseResult result)
+    private void OnResultReceived(PipeConnection sender, RelativeMouseResult result)
     {
-        // The agent reports per-batch injection success. A not-handled batch means
-        // SendInput was blocked (UIPI/input desktop) — forwarding is futile while
-        // that persists, so release the cursor instead of capturing input that
-        // goes nowhere.
-        if (!result.Handled)
+        bool blocked;
+        lock (_gate)
         {
-            _logger.LogWarning("Agent reported batch {Sequence} not handled; releasing cursor", result.LastSequence);
+            // Only the CURRENT agent connection may move the state machine: a
+            // replaced/dying connection's final queued result must not latch a
+            // block onto a healthy replacement (or flip it off).
+            if (!ReferenceEquals(_primaryConnection, sender)) return;
+            blocked = !result.Handled;
+            if (blocked) _agentInputBlocked = true;
+        }
+        if (blocked)
+        {
+            // The agent reports per-batch injection success. A not-handled batch
+            // means SendInput was blocked (UIPI/input desktop) — forwarding is
+            // futile while that persists, so release the cursor. The latched
+            // _agentInputBlocked keeps the 5 ms poll from re-capturing it; the
+            // !shouldForward transition below also stops consuming raw input.
+            _logger.LogWarning("Agent reported batch {Sequence} not handled; blocking forwarding until reconnection or re-enable", result.LastSequence);
             _cursorCapture.Release();
         }
     }
@@ -297,9 +334,13 @@ public sealed class MouseForwarder : IDisposable
                              (User32.GetAsyncKeyState(InputConstants.VK_RMENU) & InputConstants.KEY_PRESSED) != 0;
             bool rdpFocused = _isRdpFocused?.Invoke() == true;
             bool agentConnected = IsAgentConnected;
+            bool inputBlocked;
+            lock (_gate) inputBlocked = _agentInputBlocked;
             // Forwarding requires a live agent: without one the input goes nowhere
-            // while the cursor stays clipped+hidden on the host.
-            bool shouldForward = rdpFocused && !altPressed && agentConnected;
+            // while the cursor stays clipped+hidden on the host. A latched injection
+            // failure (agent could not SendInput) forces the same OFF transition so
+            // the poll cannot re-capture a cursor whose input is being dropped.
+            bool shouldForward = rdpFocused && !altPressed && agentConnected && !inputBlocked;
 
             lock (_gate)
             {

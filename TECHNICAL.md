@@ -34,7 +34,7 @@ AkiSpace.exe --fix-env (elevated, console) ────────────�
 ## 2　RDP Viewer Host (`Controls/RdpActiveXHost.cs`)
 
 - The control is created per connect and disposed per teardown; the MSTSC OCX is created by forcing `Handle` (BetterGI's `GetRequiredOcx` pattern) so the underlying window exists before any property write.
-- **Connection is a retry loop on a worker thread** (3 attempts, exponential backoff 1 s / 2 s / 4 s), with each attempt marshalled to the UI (STA) thread through `BeginInvoke`. Every attempt re-checks the cancellation token first, so a Disconnect landing between attempts truly stops the connect.
+- **Connection is a retry loop on a worker thread** (3 attempts, exponential backoff 1 s / 2 s / 4 s), with each attempt marshalled to the UI (STA) thread through `BeginInvoke`. Every attempt carries **its own CTS as a parameter** into the connect core — a queued delegate never reads the shared `_connectCts` field, so a Disconnect-then-reconnect landing between enqueue and execution cannot bind a stale attempt to the new connection's token and let two connect flows drive the same ActiveX.
 - `ConnectToChildSession` is set through the **extended-properties interface** (`IMsRdpExtendedSettings`), with a read-back log line confirming the control accepted it. A plain-TCP fallback that ignores the property produces the (516) error class of failures; the read-back exists to expose exactly that.
 - Events are consumed from a single sink: `OnLoginComplete` (dispId 3) → connected; `OnDisconnected` (4) → surfaced as failure **unless it follows a user-initiated Disconnect** (5 s suppression window); `OnLogonError` (22) — codes −5/−4/−2/3 are non-terminal prompts and leave state untouched; `OnAutoReconnected` (33) → treated as login.
 - `AuthenticationLevel = 2`: localhost certificate mismatches are logged, never silently skipped.
@@ -47,6 +47,7 @@ The controller owns the connect state machine and emits immutable `ConnectUiStat
 - The 1 Hz status poll re-asserts machine truth (`GetConnectedState`, WTS session id, unlock layer) but is **suppressed while connecting and for 5 s after an explicit disconnect** — MSTSC reports `Connected`/`OnDisconnected` asynchronously and the poll would otherwise overwrite the in-flight/terminal status.
 - A **3 s exit watchdog is armed before any teardown work**; the ActiveX can block window destruction during a connect unwind, and the watchdog guarantees process exit on that path. The window also self-heals from the ActiveX owner-disable (it re-enables itself only when no other window of the thread is open, so modal dialogs keep their modality).
 - Agent launch and manual "launch program" both run through Task Scheduler COM (`TASK_RUN_USE_SESSION_ID`); the temp task is deleted in a `finally` with a failure-path sweep, and the launch happens off the UI thread.
+- **Game Mouse has no agent prerequisite to enable**: the toggle starts the pipe listener immediately (the DACL clone-account grant is re-applied first, mirroring startup ordering), and the agent — which launches only after RDP login — completes its handshake when it comes up. Requiring an already-connected agent here was a circular dependency (the agent retries forever against a silent pipe). While the agent is absent the status row reads "game mouse waiting for the replay agent". Settings saves apply game-mouse state **live** through `SettingsService.Changed`, not on the next restart, and the setting is honored only in standard-RDP mode (child-session mode never launches an agent).
 
 ## 4　Input Pipeline (Game Mouse)
 
@@ -61,6 +62,7 @@ Cursor: ClipCursor(viewer bounds) + ShowCursor(hidden), Alt = temporary release
 - The raw-input window lives on its own thread; the class registration is Unicode-exact (`RegisterClassW` ↔ `CreateWindowExW`) — an ANSI/W mismatch here silently kills the whole pipeline.
 - The forwarder's 5 ms poll probes Alt state and viewer focus; probing happens outside the lock, the state transition **and** the cursor capture happen inside it, so a mode-disable cannot race an in-flight capture into a stuck clip+hide.
 - `CursorCapture` runs **all** Win32 cursor work on one dedicated owner thread: `ShowCursor`'s display counter is per-thread, and Capture/Release arrive from arbitrary threadpool timer threads — cross-thread hide/show would leave the cursor permanently invisible.
+- **Injection failure latches a block state**: when the agent reports a batch it could not inject (`Handled=false`, e.g. UIPI blocking SendInput), the forwarder stops forwarding and releases the cursor — and stays stopped. The 5 ms poll would otherwise re-capture a cursor whose input goes nowhere, cycling release/re-capture around a dead pipe. The block clears on a fresh agent connection or an explicit re-enable, and result frames are honored only from the **current** agent connection so a dying connection's last queued result cannot corrupt the new session's state.
 
 ## 5　IPC Protocol & Security
 
@@ -68,6 +70,7 @@ Cursor: ClipCursor(viewer bounds) + ShowCursor(hidden), Alt = temporary release
 - **Handshake**: the agent presents a 32-byte nonce; the server compares in constant time and answers a 1-byte ACK. No nonce configured, wrong nonce, or **no verdict at all** → rejected/retried (a dropped connection is a retry, never a "success"). Handshake reads are bounded by a 5 s timeout so a silent client cannot wedge the single pipe instance.
 - **Nonce delivery** is out-of-band: written to `%PROGRAMDATA%\AkiSpace\nonce_*.bin` with a DACL built **before** the bytes exist (owner + SYSTEM + clone account read/delete), consumed (read + delete) by the agent, swept at startup and at shutdown. The nonce never appears on the command line (argv leaks into Task Scheduler task XML and the PEB).
 - **Pipe DACL**: primary user + SYSTEM; standard-RDP mode adds the clone account's SID so the cross-user agent can connect. ACL build failure falls back to `PipeOptions.CurrentUserOnly` (fail-closed), never to an open DACL.
+- **Agent reconnection**: when the pipe drops while the primary is still up, the agent retries with 1/2/4/8 s exponential backoff against the same nonce (the primary only rotates the nonce when it launches a *new* agent). An explicit handshake rejection means the nonce is stale — the runner exits instead of hammering the server. A replaced connection object is disposed before its successor takes over, so no stream handle leaks across reconnects.
 
 ## 6　Environment Check & One-Click Unlock (`Services/`)
 
@@ -75,6 +78,7 @@ Cursor: ClipCursor(viewer bounds) + ShowCursor(hidden), Alt = temporary release
 - A **verdict card** translates the raw checks into the user's real question — which clone modes work on this machine. On a Home edition without the unlock layer it states that standard RDP is unavailable (child sessions unaffected) and offers the one-click install.
 - **One-click install**: downloads the pinned `sergiye/rdpWrapper` build (v2.15 x64) from its official GitHub release, verifies the SHA-256 recorded at pin time (mismatch aborts before anything executes), then launches it elevated with `-install -offline` — upstream stops/starts TermService and adds the Defender folder exclusion itself. The unlock layer is mutually exclusive with child sessions, and the UI says so before installing.
 - The firewall posture is a **single inbound block rule** on the RDP port with `remoteip=any`: Windows Firewall never inspects loopback traffic, so loopback RDP keeps working while every real remote client is blocked; the default public allow rule is removed so it cannot shadow the block.
+- Verification is **attribute-level over the COM API** (`NetFwPolicy2`): Enabled, Inbound, Block, TCP, the configured port parsed **numerically** (single port, comma list, `a-b` range — substring matching would bless a "13389" rule for port 3389), `RemoteAddresses = *` (a narrowed block rule stops blocking everything else), and `Profiles = all`. A repair run re-reads the installed rule and only reports success on a full attribute match; an unreadable rule state (COM unavailable) fails **closed** — it is never reported as verified, and the fix refuses to blindly delete-or-duplicate a rule it cannot see.
 
 ## 7　Settings, Themes, Language
 
@@ -92,7 +96,7 @@ Cursor: ClipCursor(viewer bounds) + ShowCursor(hidden), Alt = temporary release
 
 ## 9　Testing
 
-- **74 unit/integration tests** (`tests/AkiSpace.Tests`): IPC frame edge cases (truncation, oversize, negative lengths, nonce validation), settings concurrency + corrupt-file healing + DPAPI round-trips + plaintext migration, bilingual catalog key **and placeholder parity**, every XAML/code-referenced key existence (a typo fails the build, not the UI), log rotation, theme-pack completeness, pinned-download constants.
+- **105 unit/integration tests** (`tests/AkiSpace.Tests`): IPC frame edge cases (truncation, oversize, negative lengths, nonce validation), **real-pipe reconnect integration** (reconnect after a server-side drop; explicit nonce rejection is terminal — no retry), **firewall port-scope parsing** (lists, ranges, wildcard, malformed tokens), settings concurrency + corrupt-file healing + DPAPI round-trips + plaintext migration, bilingual catalog key **and placeholder parity**, every XAML/code-referenced key existence (a typo fails the build, not the UI), log rotation, theme-pack completeness, pinned-download constants.
 - **SelfTest** (`tools/AkiSpace.SelfTest`): pure-logic assertions plus an interactive UI smoke (env-check window renders with all checks) and an optional E2E connect, auto-skipped on CI/headless.
 - **End-to-end UIA scenarios** drive the real app on a real desktop: fresh start, multi-instance guard, settings save/reload round-trip, standard-RDP password gate, child-session connect → **real capture-to-clipboard bitmap verification** → disconnect without spurious dialogs, corrupt-settings recovery, maximize/restore layout, and the raw-input registration regression.
 
@@ -132,7 +136,7 @@ AkiSpace.exe --fix-env（提权控制台）────────────�
 ## 2　RDP 查看器宿主（`Controls/RdpActiveXHost.cs`）
 
 - 每次连接创建、每次拆除销毁；通过强制读取 `Handle` 创建 OCX（BetterGI 的 `GetRequiredOcx` 模式），保证任何属性写入前底层窗口已存在。
-- **连接是工作线程上的重试循环**（3 次，指数退避 1/2/4 秒），每次尝试经 `BeginInvoke` 封送回 UI（STA）线程；每次尝试先复查取消令牌——重试间隙点「断开」能真正终止连接。
+- **连接是工作线程上的重试循环**（3 次，指数退避 1/2/4 秒），每次尝试经 `BeginInvoke` 封送回 UI（STA）线程；每次尝试把**自己的 CTS 以参数**传入连接核心——排队中的委托绝不读取共享的 `_connectCts` 字段，「断开→立刻重连」落在排队与执行之间时，旧尝试不会别名到新连接的令牌，也就不会出现两条连接流同时驱动同一个 ActiveX。
 - `ConnectToChildSession` 经**扩展属性接口**（`IMsRdpExtendedSettings`）设置，并回读打日志确认控件接受。若控件静默回退成普通 TCP 连接，会产生 (516) 一类错误——回读日志就是为暴露这种情况而存在。
 - 事件经单一接收器消费：`OnLoginComplete`(dispId 3) → 已连接；`OnDisconnected`(4) → 上报为失败，**但用户主动断开后的 5 秒内除外**（抑制窗口）；`OnLogonError`(22) 中 −5/−4/−2/3 为非终止提示，不动状态；`OnAutoReconnected`(33) → 视为登录完成。
 - `AuthenticationLevel = 2`：本地回环证书不匹配会记录告警，绝不静默跳过。
@@ -145,6 +149,7 @@ AkiSpace.exe --fix-env（提权控制台）────────────�
 - 1Hz 状态轮询负责对齐机器真值（`GetConnectedState`、WTS 会话、解锁层），但在**连接期间与主动断开后 5 秒内被抑制**——MSTSC 的 `Connected`/`OnDisconnected` 是异步的，轮询否则会把进行中/终态覆盖掉。
 - **3 秒退出看门狗在一切清理之前武装**：ActiveX 可能在连接未决时阻塞窗口销毁，看门狗保证该路径下进程必然退出。窗口还会自愈 ActiveX 的 owner-disable（仅当本线程没有其他窗口时才恢复启用，模态对话框的模态性因此保持）。
 - Agent 启动与手动「启动程序」都走 Task Scheduler COM（`TASK_RUN_USE_SESSION_ID`）；临时任务在 `finally` 中删除并有失败兜底清扫，且启动过程不在 UI 线程。
+- **游戏鼠标启用无需 Agent 在线**：开关立即启动管道监听（先重放 DACL 分身账户授权，与启动顺序一致），Agent 在 RDP 登录后启动并完成握手。原先要求「Agent 已连接才能开启」是循环依赖——Agent 对着沉默的管道无限重试。Agent 未接入时状态行显示「游戏鼠标等待回放 Agent 接入」。设置保存经 `SettingsService.Changed` **实时生效**（不用重启），且该设置仅在标准 RDP 模式下生效（子会话模式永不启动 Agent）。
 
 ## 4　输入管线（游戏鼠标）
 
@@ -159,6 +164,7 @@ WM_INPUT（RawInputMonitor，独立 STA 线程，RIDEV_INPUTSINK）
 - 原始输入窗口在独立线程上；类注册是精确的 Unicode 配对（`RegisterClassW` ↔ `CreateWindowExW`）——此处一旦出现 ANSI/W 错配，整条管线会静默失效。
 - 转发器的 5ms 轮询探测 Alt 与查看器焦点：探测在锁外，**状态迁移与光标捕获在锁内**，关闭模式不可能与进行中的捕获竞态出「裁剪+隐藏卡死」。
 - `CursorCapture` 把**所有** Win32 光标操作放在专用 owner 线程上串行执行：`ShowCursor` 的显示计数按线程维护，而捕获/释放来自任意线程池定时器线程——跨线程一隐一显会让光标永久不可见。
+- **注入失败锁存阻断态**：Agent 上报某批无法注入（`Handled=false`，典型如 UIPI 拦截 SendInput）时，转发器停止转发并释放光标——**并保持停止**。否则 5ms 轮询会立刻重新捕获一个输入无处可去的光标，围着死管道循环释放/重捕。阻断在新 Agent 连接或显式重新开启时清除，且结果帧只认**当前** Agent 连接——垂死连接的最后一个排队结果不会污染新会话的状态。
 
 ## 5　IPC 协议与安全
 
@@ -166,6 +172,7 @@ WM_INPUT（RawInputMonitor，独立 STA 线程，RIDEV_INPUTSINK）
 - **握手**：Agent 出示 32 字节 nonce；服务端常数时间比较并以 1 字节 ACK 应答。未配置 nonce、nonce 错误、**以及完全无应答** → 拒绝/重试（对端断线是重试，绝不是"成功"）。握手读取有 5 秒超时，静默客户端不可能卡死单实例管道。
 - **nonce 投递走带外**：写入 `%PROGRAMDATA%\AkiSpace\nonce_*.bin`，DACL 在字节落盘**之前**构建（owner + SYSTEM + 分身账户的读/删权限），由 Agent 读取后删除，启动与关机各清扫一次。nonce 绝不出现在命令行（argv 会泄漏进计划任务 XML 与进程 PEB）。
 - **管道 DACL**：主用户 + SYSTEM；标准 RDP 模式追加分身账户 SID 以便跨用户 Agent 连接。ACL 构建失败回退 `PipeOptions.CurrentUserOnly`（fail-closed），绝不回退开放 DACL。
+- **Agent 重连**：主进程仍在运行而管道断开时，Agent 以 1/2/4/8 秒指数退避、用同一 nonce 重试（主进程只在启动*新* Agent 时轮换 nonce）。显式握手拒绝意味着 nonce 已过期——Runner 直接退出，不捶打服务端。被替换的连接对象在继任者接管前先释放，重连不再泄漏流句柄。
 
 ## 6　环境检查与一键解锁（`Services/`）
 
@@ -173,6 +180,7 @@ WM_INPUT（RawInputMonitor，独立 STA 线程，RIDEV_INPUTSINK）
 - **结论卡片**把原始检查翻译成用户真正关心的问题——本机哪些分身模式可用。家庭版未装解锁层时，明确告知标准 RDP 不可用（子会话不受影响）并提供一键安装。
 - **一键安装**：从 sergiye/rdpWrapper 官方 GitHub 发布下载钉定版本（v2.15 x64），按发布时记录的 SHA-256 逐字节校验（不符即中止，不执行任何内容），随后提权运行 `-install -offline`——上游安装器自行完成 TermWrap 安装与 TermService 重启及 Defender 目录排除。解锁层与子会话互斥，安装前界面会明确提示。
 - 防火墙策略是 RDP 端口上**一条** `remoteip=any` 的入站阻断规则：Windows 防火墙不检查回环流量，因此回环 RDP 照常工作而所有真实远端被拦；默认公开允许规则会被删除以免干扰。
+- 校验是**基于 COM API 的属性级校验**（`NetFwPolicy2`）：Enabled、入站、Block、TCP、RDP 端口**按数值精确解析**（单端口、逗号列表、`a-b` 范围——子串匹配会把 13389 的规则当成 3389）、`RemoteAddresses = *`（收窄的阻断规则拦不住其余来源）、`Profiles = 全部`。修复完成后重新读取实际规则，只有全属性匹配才报告成功；规则状态不可读（COM 不可用）一律 **fail-closed**——绝不虚报「已验证」，修复流程也拒绝盲目删除或复制一条看不见的规则。
 
 ## 7　设置、主题与语言
 
@@ -190,6 +198,6 @@ WM_INPUT（RawInputMonitor，独立 STA 线程，RIDEV_INPUTSINK）
 
 ## 9　测试
 
-- **74 项单元/集成测试**（`tests/AkiSpace.Tests`）：IPC 帧边界（截断、超长、负长度、nonce 校验）、设置并发 + 损坏自愈 + DPAPI 往返 + 明文迁移、双语目录键位**与占位符对齐**、全部 XAML/代码引用键存在性（拼错键名是构建失败而不是界面显示键名）、日志滚动、调色板完整性、钉定下载常量。
+- **105 项单元/集成测试**（`tests/AkiSpace.Tests`）：IPC 帧边界（截断、超长、负长度、nonce 校验）、**真实管道重连集成**（服务端断开后重连成功；显式 nonce 拒绝为终态、不重试）、**防火墙端口作用域解析**（列表、范围、通配、畸形 token）、设置并发 + 损坏自愈 + DPAPI 往返 + 明文迁移、双语目录键位**与占位符对齐**、全部 XAML/代码引用键存在性（拼错键名是构建失败而不是界面显示键名）、日志滚动、调色板完整性、钉定下载常量。
 - **SelfTest**（`tools/AkiSpace.SelfTest`）：纯逻辑断言 + 交互式 UI 冒烟（环境检查窗口完整渲染）+ 可选 E2E 连接，CI/无头环境自动跳过。
 - **端到端 UIA 场景**在真实桌面驱动真实应用：全新启动、多实例守护、设置保存/重载往返、标准 RDP 密码门、子会话连接 → **真实截屏→剪贴板位图验证** → 断开无误弹、损坏设置恢复、最大化/还原布局、原始输入注册回归。

@@ -187,10 +187,43 @@ public sealed class ConnectionController
         _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
 
         _mouseForwarder.Initialize(GetRdpViewerBounds, IsRdpInputFocused);
-        _mouseForwarder.SetGameMouseModeEnabled(_settingsService.Current.GameMouseModeEnabled);
+        ApplyGameMouseSetting();
+
+        // Settings saved from the settings window must apply live, not only after a
+        // restart — the window only writes through SettingsService, nothing else
+        // pushes GameMouseModeEnabled into the forwarder.
+        _settingsService.Changed += OnSettingsChanged;
 
         SweepStaleNonceFiles();
         RefreshStatus();
+    }
+
+    /// <summary>
+    /// Applies the persisted game-mouse setting to the forwarder and mirrors it into
+    /// the toggle button state. Idempotent: SetGameMouseModeEnabled no-ops when the
+    /// value already matches (ToggleGameMouse applies directly, then its own Update
+    /// fires OnSettingsChanged — the second apply is a no-op).
+    /// </summary>
+    private void ApplyGameMouseSetting()
+    {
+        // Game mouse only functions in standard-RDP mode (the replay agent is
+        // launched only there). Honoring the setting in child-session mode would
+        // leave a listening pipe and a permanent "waiting for agent" status for
+        // an agent that never comes.
+        var enabled = _settingsService.Current.ConnectionMode != ConnectionMode.ChildSession
+                      && _settingsService.Current.GameMouseModeEnabled;
+        _mouseForwarder.SetGameMouseModeEnabled(enabled);
+        if (_gameMouseOn != enabled)
+        {
+            _gameMouseOn = enabled;
+            ApplyState();
+        }
+    }
+
+    private void OnSettingsChanged()
+    {
+        if (_closing) return;
+        ApplyGameMouseSetting();
     }
 
     /// <summary>
@@ -477,13 +510,21 @@ public sealed class ConnectionController
 
     public void ToggleGameMouse()
     {
+        // No agent-connection prerequisite: the pipe server must be LISTENING before
+        // the replay agent can complete its nonce handshake, and the agent only comes
+        // up after RDP login. Requiring IsAgentConnected here was a circular
+        // dependency — the agent retried forever against a silent pipe, and the only
+        // escape was pre-ticking the setting and restarting the app. Enabling now
+        // just starts the listener; the agent connects when it appears (the status
+        // row shows "waiting for agent" in the meantime).
         var enabled = _mouseForwarder.IsGameMouseModeEnabled;
-        if (!enabled && !_mouseForwarder.IsAgentConnected)
+        if (!enabled)
         {
-            System.Windows.Forms.MessageBox.Show(
-                Loc.T("Box_GameMouseAgent"),
-                Loc.T("Box_GameMouseTitle"), System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
-            return;
+            // Mirror OnShellLoaded's ordering: the clone-account grant must be in the
+            // pipe DACL BEFORE the next listening stream is created (stream-creation
+            // bakes the ACL), or a cross-user agent is denied at connect time. Cheap
+            // local SAM lookup, no-op for child-session mode.
+            _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
         }
         _mouseForwarder.SetGameMouseModeEnabled(!enabled);
         _gameMouseOn = !enabled;
@@ -948,8 +989,20 @@ public sealed class ConnectionController
                     && Environment.TickCount64 >= Volatile.Read(ref _disconnectPollSuppressUntil);
                 if (pollOverwriteAllowed)
                 {
-                    _statusKey = connected ? "Conn_Connected" : "Conn_NotConnected";
-                    _statusLevel = connected ? StatusLevel.Good : StatusLevel.Idle;
+                    if (connected && _mouseForwarder.IsGameMouseModeEnabled && !_mouseForwarder.IsAgentConnected)
+                    {
+                        // Game mouse is on but the replay agent has not completed its
+                        // handshake yet (first enable, or the agent is still coming
+                        // up) — say so instead of a bare "connected" that hides the
+                        // missing half of the feature.
+                        _statusKey = "Conn_GameMouseWaiting";
+                        _statusLevel = StatusLevel.InFlight;
+                    }
+                    else
+                    {
+                        _statusKey = connected ? "Conn_Connected" : "Conn_NotConnected";
+                        _statusLevel = connected ? StatusLevel.Good : StatusLevel.Idle;
+                    }
                     _statusArgs = [];
                     _isConnected = connected;
                     ApplyState();

@@ -127,6 +127,7 @@ public static class Loc
         ["Conn_ConnectedAgent"] = "Connection: connected — agent starting",
         ["Conn_Ready"] = "Connection: connected — clone desktop ready",
         ["Conn_Connected"] = "Connection: connected",
+        ["Conn_GameMouseWaiting"] = "Connection: connected — game mouse waiting for the replay agent …",
         ["Conn_Launching"] = "Connection: launching {0} …",
         ["Conn_Launched"] = "Connection: launched {0} in the clone (session {1})",
         ["Conn_LaunchFailed"] = "Connection: launch failed (see log)",
@@ -163,11 +164,6 @@ public static class Loc
         ["Box_ConnectFailed"] = "Connect failed: {0}",
         ["Box_NoChildSession"] = "There is no active clone session.",
         ["Box_TerminateConfirm"] = "Terminate clone session (ID {0})? All programs in it will be closed.",
-        ["Box_GameMouseTitle"] = "AkiSpace — Game Mouse",
-        ["Box_GameMouseAgent"] =
-            "The replay agent is not connected. Game Mouse mode requires the replay agent (--agent mode) " +
-            "running inside the clone session.\nStart the agent in the clone session first, or use the " +
-            "standard RDP mouse until it is up.",
         ["Box_ConnectFirst"] = "Connect to the clone first.",
         ["Box_LaunchFail"] = "Launch failed. This can be caused by insufficient permissions or an unavailable Task Scheduler service.",
 
@@ -439,6 +435,7 @@ public static class Loc
         ["Conn_ConnectedAgent"] = "连接: 已连接 — Agent 启动中",
         ["Conn_Ready"] = "连接: 已连接 — 分身桌面就绪",
         ["Conn_Connected"] = "连接: 已连接",
+        ["Conn_GameMouseWaiting"] = "连接: 已连接 — 游戏鼠标等待回放 Agent 接入 ...",
         ["Conn_Launching"] = "连接: 正在启动 {0} …",
         ["Conn_Launched"] = "连接: 已在分身（会话 {1}）中启动 {0}",
         ["Conn_LaunchFailed"] = "连接: 启动失败（详见日志）",
@@ -475,10 +472,6 @@ public static class Loc
         ["Box_ConnectFailed"] = "连接失败：{0}",
         ["Box_NoChildSession"] = "当前没有活动的子会话。",
         ["Box_TerminateConfirm"] = "确定要终止子会话（ID {0}）吗？其中的程序将全部关闭。",
-        ["Box_GameMouseTitle"] = "AkiSpace — 游戏鼠标",
-        ["Box_GameMouseAgent"] =
-            "回放 Agent 未连接。游戏鼠标模式需要分身侧运行回放 Agent（--agent 模式）。\n" +
-            "请先在分身会话中启动 Agent，或在 Agent 落地前使用标准 RDP 鼠标。",
         ["Box_ConnectFirst"] = "请先连接分身。",
         ["Box_LaunchFail"] = "启动失败。可能是权限不足或 Task Scheduler 服务不可用。",
 

@@ -24,3 +24,9 @@ jobs:
 
       - name: Test
         run: dotnet test tests/AkiSpace.Tests/AkiSpace.Tests.csproj -c Release --no-build
+
+      # Compile gate only: SelfTest performs interactive/system-level checks
+      # (RDP listener probes, service queries) that cannot run on a headless CI
+      # runner, so it is built to catch compile drift but not executed here.
+      - name: Build SelfTest
+        run: dotnet build tools/AkiSpace.SelfTest/AkiSpace.SelfTest.csproj -c Release --no-restore

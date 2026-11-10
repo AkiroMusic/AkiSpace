@@ -373,6 +373,13 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// Bare pipe name to dial (both pipe stream types prepend <c>\\.\pipe\</c>).
+    /// Defaults to the production well-known name; override (before ConnectAsync)
+    /// to isolate concurrent instances — e.g. per-test, matching PipeServer.PipeName.
+    /// </summary>
+    public string PipeName { get; set; } = PipeNames.MouseForward;
+
     /// <summary>Sets the nonce for handshake authentication.</summary>
     public void SetNonce(byte[] nonce) => _nonce = nonce;
 
@@ -410,13 +417,18 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
     /// <summary>Whether the pipe is currently connected.</summary>
     public bool IsConnected => _connection?.IsConnected == true;
 
-    /// <summary>Connects to the primary's pipe, retrying until connected or cancelled.</summary>
-    public async Task ConnectAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Connects to the primary's pipe, retrying until connected, explicitly rejected,
+    /// or cancelled. Returns true when connected with the handshake accepted; false
+    /// when the server rejected the nonce (retrying cannot succeed) or the attempt
+    /// was cancelled — callers treat false as terminal.
+    /// </summary>
+    public async Task<bool> ConnectAsync(CancellationToken ct = default)
     {
         await _connectGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (IsConnected) return;
+            if (IsConnected) return true;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
 
             if (_nonce is not { Length: 32 })
@@ -425,7 +437,7 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                 // connecting anyway would just burn pipe instances and hide the
                 // real configuration problem behind retry noise.
                 _logger.LogError("No handshake nonce set; refusing to connect (the fail-closed server would reject us)");
-                return;
+                return false;
             }
 
             while (!linked.IsCancellationRequested)
@@ -434,7 +446,7 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                 try
                 {
                     stream = new NamedPipeClientStream(
-                        ".", PipeNames.MouseForward,
+                        ".", PipeName,
                         PipeDirection.InOut, PipeOptions.Asynchronous);
                     await stream.ConnectAsync(TimeSpan.FromSeconds(2), linked.Token).ConfigureAwait(false);
                     _logger.LogInformation("Connected to primary pipe, sending handshake");
@@ -448,7 +460,7 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                         // Explicit rejection: retrying with the same nonce cannot
                         // succeed and would only hammer the server.
                         _logger.LogError("Pipe handshake rejected by primary (nonce mismatch); not retrying");
-                        return;
+                        return false;
                     }
                     if (ack == null)
                     {
@@ -459,26 +471,33 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                         // loop EOFs immediately, silently killing the agent session.
                         _logger.LogDebug("No handshake verdict from primary (timeout/EOF); retrying");
                         try { await Task.Delay(1000, linked.Token).ConfigureAwait(false); }
-                        catch (OperationCanceledException) { return; }
+                        catch (OperationCanceledException) { return false; }
                         continue;
                     }
                     _logger.LogInformation("Handshake accepted by primary");
+
+                    // A previous session's connection object may still hold its stream
+                    // handle (its read loop ended but nothing disposed it). Release it
+                    // before the replacement takes over — IsConnected is already false,
+                    // so no in-flight traffic can be cut short.
+                    if (_connection is { } stale)
+                        await stale.DisposeAsync().ConfigureAwait(false);
 
                     _connection = new PipeConnection(stream, _logger);
                     stream = null; // ownership transferred to the connection
                     _connection.BatchReceived += b => BatchReceived?.Invoke(b);
                     _connection.ResultReceived += r => ResultReceived?.Invoke(r);
                     _ = _connection.RunAsync(_cts.Token);
-                    return;
+                    return true;
                 }
                 catch (OperationCanceledException)
                 {
-                    return;
+                    return false;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogDebug("Pipe connect retry: {Message}", ex.Message);
-                    try { await Task.Delay(1000, linked.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return; }
+                    try { await Task.Delay(1000, linked.Token).ConfigureAwait(false); } catch (OperationCanceledException) { return false; }
                 }
                 finally
                 {
@@ -487,6 +506,7 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                     stream?.Dispose();
                 }
             }
+            return false;
         }
         finally
         {

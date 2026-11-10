@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Globalization;
 using AkiSpace.Common;
 using AkiSpace.Native;
 using Microsoft.Extensions.Logging;
@@ -446,11 +447,59 @@ public sealed class EnvironmentVerifier
     internal enum FirewallRuleState { Missing, Correct, Incorrect, Unknown }
 
     /// <summary>
+    /// Precise match of <paramref name="port"/> against a firewall LocalPorts/
+    /// RemotePorts scope string: a single port, a comma-separated list, an
+    /// inclusive "a-b" range, or "*" (any). Substring matching is not enough —
+    /// "3389" must not match a rule scoped to "13389", and "3389-4000" must.
+    /// Malformed tokens simply never match.
+    /// </summary>
+    internal static bool LocalPortsMatch(string? ports, int port)
+    {
+        if (string.IsNullOrWhiteSpace(ports)) return false;
+        if (ports.Trim() == "*") return true;
+        foreach (var raw in ports.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (raw == "*") return true;
+            var dash = raw.IndexOf('-');
+            if (dash < 0)
+            {
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var single)
+                    && single == port)
+                    return true;
+            }
+            else
+            {
+                var lo = raw[..dash];
+                var hi = raw[(dash + 1)..];
+                if (int.TryParse(lo, NumberStyles.Integer, CultureInfo.InvariantCulture, out var low)
+                    && int.TryParse(hi, NumberStyles.Integer, CultureInfo.InvariantCulture, out var high)
+                    && high >= low
+                    && port >= low && port <= high)
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// True when the rule's RemoteAddresses scope is unrestricted ("*"). A block
+    /// rule narrowed to specific addresses stops blocking everything else, so
+    /// only "*" preserves the loopback-only boundary.
+    /// </summary>
+    internal static bool RemoteAddressesAreAny(string? remoteAddresses) =>
+        !string.IsNullOrWhiteSpace(remoteAddresses) && remoteAddresses.Trim() == "*";
+
+    /// <summary>NET_FW_PROFILE2_ALL — the rule applies to every network profile.</summary>
+    internal const int NetFwProfile2All = unchecked((int)0x7FFFFFFF);
+
+    /// <summary>
     /// Reads the rule via the Windows Firewall COM API (NetFwPolicy2) and validates
-    /// the attributes that actually enforce the security boundary: Enabled, Inbound,
-    /// Block, TCP, the configured port. Name-only checks cannot see an action flipped
-    /// to Allow or a rule disabled. Returns Unknown (caller falls back to the legacy
-    /// name-only behavior) when the COM API itself is unavailable.
+    /// every attribute that enforces the security boundary: Enabled, Inbound, Block,
+    /// TCP, the configured port (precisely parsed), RemoteAddresses = any, and
+    /// Profiles = all. Name-only checks cannot see an action flipped to Allow, a
+    /// port narrowed to "13389", or a profile restriction that gaps the protection.
+    /// Returns Unknown when the COM API itself is unreadable — callers must treat
+    /// Unknown as a FAILURE (fail closed), never as "the rule is fine".
     /// </summary>
     internal static FirewallRuleState GetFirewallLoopbackRuleState(int port, string ruleName)
     {
@@ -462,14 +511,16 @@ public sealed class EnvironmentVerifier
             try
             {
                 dynamic rule = policy.Rules.Item(ruleName);
-                var portMatches = Convert.ToString(rule.LocalPorts, System.Globalization.CultureInfo.InvariantCulture)
-                    ?.IndexOf(port.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                              StringComparison.Ordinal) >= 0;
-                var ok = Convert.ToBoolean(rule.Enabled, System.Globalization.CultureInfo.InvariantCulture)
+                var localPorts = Convert.ToString(rule.LocalPorts, CultureInfo.InvariantCulture);
+                var remoteAddresses = Convert.ToString(rule.RemoteAddresses, CultureInfo.InvariantCulture);
+                var profiles = Convert.ToInt32(rule.Profiles, CultureInfo.InvariantCulture);
+                var ok = Convert.ToBoolean(rule.Enabled, CultureInfo.InvariantCulture)
                          && rule.Action == 1  // NET_FW_ACTION_BLOCK
                          && rule.Direction == 1 // NET_FW_DIRECTION_IN
                          && rule.Protocol == 6  // TCP
-                         && portMatches == true;
+                         && LocalPortsMatch(localPorts, port)
+                         && RemoteAddressesAreAny(remoteAddresses)
+                         && profiles == NetFwProfile2All;
                 return ok ? FirewallRuleState.Correct : FirewallRuleState.Incorrect;
             }
             finally
@@ -485,7 +536,7 @@ public sealed class EnvironmentVerifier
         }
         catch (Exception)
         {
-            // COM unavailable / unexpected shape — caller falls back to name-only.
+            // COM unavailable / unexpected shape — the rule cannot be verified.
             return FirewallRuleState.Unknown;
         }
     }
@@ -496,15 +547,30 @@ public sealed class EnvironmentVerifier
         {
             var port = _sessionManager.GetConfiguredRdpPort();
 
+            // Four states, four behaviors (Correct/Incorrect/Unknown/Missing):
+            // - Correct: nothing to do. Missing: create below. Incorrect: delete and
+            //   recreate. Unknown: the live rule CANNOT be read (COM unavailable) —
+            //   deleting by name would blindly remove a possibly-correct rule and
+            //   adding a duplicate would leave two same-name rules, so repair must
+            //   fail closed rather than claim a fix it cannot verify.
             var state = GetFirewallLoopbackRuleState(port, "AkiSpace RDP Loopback");
-            if (state == FirewallRuleState.Correct) return true;
-            if (state == FirewallRuleState.Incorrect)
+            switch (state)
             {
-                // Same name but wrong attributes (action flipped, port changed,
-                // disabled...) — a name-only check would bless it. Replace it.
-                LogWarning("Firewall rule 'AkiSpace RDP Loopback' exists with wrong attributes; replacing it");
-                if (!RunNetsh("advfirewall firewall delete rule name=\"AkiSpace RDP Loopback\"", 10000))
+                case FirewallRuleState.Correct:
+                    return true;
+                case FirewallRuleState.Incorrect:
+                    // Same name but wrong attributes (action flipped, port narrowed,
+                    // disabled, remoteip restricted, profile-limited...) — a name-only
+                    // check would bless it. Replace it.
+                    LogWarning("Firewall rule 'AkiSpace RDP Loopback' exists with wrong attributes; replacing it");
+                    if (!RunNetsh("advfirewall firewall delete rule name=\"AkiSpace RDP Loopback\"", 10000))
+                        return false;
+                    break;
+                case FirewallRuleState.Unknown:
+                    LogWarning("Firewall rule 'AkiSpace RDP Loopback' state unreadable (COM API unavailable); cannot verify or repair");
                     return false;
+                case FirewallRuleState.Missing:
+                    break;
             }
 
             // Windows Firewall never inspects loopback (127.0.0.1/::1) traffic — it is
@@ -524,7 +590,14 @@ public sealed class EnvironmentVerifier
             if (!RunNetsh(BuildFirewallAddRule("AkiSpace RDP Loopback", "block", port, "any"), 15000))
                 return false;
 
-            return FirewallRuleExists("AkiSpace RDP Loopback");
+            // Post-fix verification is attribute-level: a rule that merely EXISTS
+            // (netsh rules are not name-unique) proves nothing. Unknown here means
+            // the API that just installed the rule could not read it back — report
+            // failure instead of a fix we could not confirm.
+            var finalState = GetFirewallLoopbackRuleState(port, "AkiSpace RDP Loopback");
+            if (finalState == FirewallRuleState.Correct) return true;
+            LogWarning($"Firewall fix ran but post-fix verification says {finalState}; not reporting success");
+            return false;
         }
         catch (Exception ex)
         {
