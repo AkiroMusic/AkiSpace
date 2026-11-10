@@ -155,12 +155,13 @@ public sealed class EnvironmentVerifier
         // so this blocks every real remote client while loopback RDP keeps working — enforcing
         // "loopback only" without needing a (no-op) allow=127.0.0.1 rule. It also deletes the
         // built-in public allow rule so it can't shadow the intent.
-        var blockFound = FirewallRuleExists("AkiSpace RDP Loopback");
+        var ruleState = GetFirewallLoopbackRuleState(_sessionManager.GetConfiguredRdpPort(), "AkiSpace RDP Loopback");
         var publicRuleFound = FirewallRuleExists("Remote Desktop - User Mode (TCP-In)");
-        var allOk = blockFound && !publicRuleFound;
+        var blockOk = ruleState == FirewallRuleState.Correct;
+        var allOk = blockOk && !publicRuleFound;
         var detail = allOk
             ? Loc.T("Chk_FirewallOk")
-            : Loc.F("Chk_FirewallBad", blockFound, publicRuleFound);
+            : Loc.F("Chk_FirewallBad", ruleState.ToString(), publicRuleFound);
         return new("FirewallLoopback", Loc.T("Chk_Firewall"), allOk, detail);
     }
 
@@ -278,9 +279,7 @@ public sealed class EnvironmentVerifier
             // stascorp rdpwrap.dll replace ServiceDll the same way, and both break
             // the child-session broker (keep in sync with
             // RdpWrapperInstaller.IsWrapperHookInstalled).
-            var hooked = !string.IsNullOrEmpty(serviceDll)
-                         && (serviceDll.IndexOf("TermWrap", StringComparison.OrdinalIgnoreCase) >= 0
-                             || serviceDll.IndexOf("rdpwrap", StringComparison.OrdinalIgnoreCase) >= 0);
+            var hooked = IsKnownWrapperServiceDll(serviceDll);
             if (hooked)
             {
                 return new(
@@ -302,6 +301,16 @@ public sealed class EnvironmentVerifier
             return new("WrapperHook", Loc.T("Chk_WrapperHook"), false, Loc.F("Env_CheckFailed", ex.Message));
         }
     }
+
+    /// <summary>
+    /// The single wrapper-family rule: both sergiye's TermWrap.dll and classic
+    /// stascorp rdpwrap.dll replace TermService's ServiceDll the same way, so
+    /// detection, disable and installer state all consult this one predicate.
+    /// </summary>
+    internal static bool IsKnownWrapperServiceDll(string? serviceDll) =>
+        !string.IsNullOrEmpty(serviceDll)
+        && (serviceDll.IndexOf("TermWrap", StringComparison.OrdinalIgnoreCase) >= 0
+            || serviceDll.IndexOf("rdpwrap", StringComparison.OrdinalIgnoreCase) >= 0);
 
     /// <summary>
     /// Disables the RDP Wrapper TermWrap.dll hook by restoring TermService's
@@ -326,7 +335,7 @@ public sealed class EnvironmentVerifier
                 return false;
             }
             var current = k.GetValue(valueName) as string;
-            if (current is null || current.IndexOf("TermWrap", StringComparison.OrdinalIgnoreCase) < 0)
+            if (!IsKnownWrapperServiceDll(current))
             {
                 _logger.LogInformation("RDP Wrapper hook not active; nothing to disable");
                 return true;
@@ -348,7 +357,12 @@ public sealed class EnvironmentVerifier
         {
             using var sc = new System.ServiceProcess.ServiceController("TermService");
             if (sc.Status != System.ServiceProcess.ServiceControllerStatus.Running)
+            {
+                // A freshly-started service must actually reach Running before a
+                // Stop is legal — stopping a StartPending service throws.
                 sc.Start();
+                sc.WaitForStatus(System.ServiceProcess.ServiceControllerStatus.Running, TimeSpan.FromSeconds(15));
+            }
             sc.Stop();
             sc.WaitForStatus(System.ServiceProcess.ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
             sc.Start();
@@ -428,13 +442,70 @@ public sealed class EnvironmentVerifier
         }
     }
 
+    /// <summary>Attribute-level verdict for the loopback block rule.</summary>
+    internal enum FirewallRuleState { Missing, Correct, Incorrect, Unknown }
+
+    /// <summary>
+    /// Reads the rule via the Windows Firewall COM API (NetFwPolicy2) and validates
+    /// the attributes that actually enforce the security boundary: Enabled, Inbound,
+    /// Block, TCP, the configured port. Name-only checks cannot see an action flipped
+    /// to Allow or a rule disabled. Returns Unknown (caller falls back to the legacy
+    /// name-only behavior) when the COM API itself is unavailable.
+    /// </summary>
+    internal static FirewallRuleState GetFirewallLoopbackRuleState(int port, string ruleName)
+    {
+        try
+        {
+            var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2", throwOnError: false);
+            if (policyType is null) return FirewallRuleState.Unknown;
+            dynamic policy = Activator.CreateInstance(policyType)!;
+            try
+            {
+                dynamic rule = policy.Rules.Item(ruleName);
+                var portMatches = Convert.ToString(rule.LocalPorts, System.Globalization.CultureInfo.InvariantCulture)
+                    ?.IndexOf(port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                              StringComparison.Ordinal) >= 0;
+                var ok = Convert.ToBoolean(rule.Enabled, System.Globalization.CultureInfo.InvariantCulture)
+                         && rule.Action == 1  // NET_FW_ACTION_BLOCK
+                         && rule.Direction == 1 // NET_FW_DIRECTION_IN
+                         && rule.Protocol == 6  // TCP
+                         && portMatches == true;
+                return ok ? FirewallRuleState.Correct : FirewallRuleState.Incorrect;
+            }
+            finally
+            {
+                if (System.Runtime.InteropServices.Marshal.IsComObject(policy))
+                    System.Runtime.InteropServices.Marshal.FinalReleaseComObject(policy);
+            }
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Rules.Item throws when the rule is absent.
+            return FirewallRuleState.Missing;
+        }
+        catch (Exception)
+        {
+            // COM unavailable / unexpected shape — caller falls back to name-only.
+            return FirewallRuleState.Unknown;
+        }
+    }
+
     private bool EnsureFirewallLoopbackRule()
     {
         try
         {
             var port = _sessionManager.GetConfiguredRdpPort();
 
-            if (FirewallRuleExists("AkiSpace RDP Loopback")) return true;
+            var state = GetFirewallLoopbackRuleState(port, "AkiSpace RDP Loopback");
+            if (state == FirewallRuleState.Correct) return true;
+            if (state == FirewallRuleState.Incorrect)
+            {
+                // Same name but wrong attributes (action flipped, port changed,
+                // disabled...) — a name-only check would bless it. Replace it.
+                LogWarning("Firewall rule 'AkiSpace RDP Loopback' exists with wrong attributes; replacing it");
+                if (!RunNetsh("advfirewall firewall delete rule name=\"AkiSpace RDP Loopback\"", 10000))
+                    return false;
+            }
 
             // Windows Firewall never inspects loopback (127.0.0.1/::1) traffic — it is
             // permitted at a higher WFP sub-layer. So an `allow remoteip=127.0.0.1` rule
@@ -486,6 +557,11 @@ public sealed class EnvironmentVerifier
             };
             using var p = Process.Start(psi);
             if (p is null) return false;
+            // Drain BOTH streams concurrently: netsh writes to stdout/stderr and a
+            // full pipe buffer would block it while we wait for exit — the same
+            // deadlock FirewallRuleExists already avoids.
+            var outTask = p.StandardOutput.ReadToEndAsync();
+            var errTask = p.StandardError.ReadToEndAsync();
             var exited = p.WaitForExit(timeoutMs);
             if (!exited)
             {
@@ -494,6 +570,8 @@ public sealed class EnvironmentVerifier
                 LogWarning($"netsh timed out after {timeoutMs}ms: {args}");
                 return false;
             }
+            _ = errTask.GetAwaiter().GetResult();
+            _ = outTask.GetAwaiter().GetResult();
             // Read ExitCode only after a confirmed exit.
             return p.ExitCode == 0;
         }

@@ -264,7 +264,9 @@ public sealed class RdpActiveXHost : AxHost
         // delegate is already queued on the UI thread — honoring the cancel here is
         // what makes "Disconnect during backoff" actually stop the connect.
         var cts = Volatile.Read(ref _connectCts);
-        if (cts is { IsCancellationRequested: true })
+        // NULL counts as cancelled: DisconnectSession nulls the field when it
+        // consumes the CTS, and a queued delegate must not connect after that.
+        if (cts is null || cts.IsCancellationRequested)
         {
             _logger.LogInformation("Connect attempt cancelled before start (user disconnect)");
             return false;

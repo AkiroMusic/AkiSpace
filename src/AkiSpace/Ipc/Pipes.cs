@@ -358,7 +358,7 @@ public sealed class PipeServer : IAsyncDisposable, IDisposable
 /// Named-pipe client (child session side). Connects to the primary session's
 /// pipe and sends mouse batches / receives results.
 /// </summary>
-public sealed class PipeClient : IAsyncDisposable
+public sealed class PipeClient : IAsyncDisposable, IDisposable
 {
     private readonly ILogger<PipeClient> _logger;
     private PipeConnection? _connection;
@@ -545,6 +545,16 @@ public sealed class PipeClient : IAsyncDisposable
         // RunAsync may still hold the token briefly after Cancel(); disposing the CTS
         // while a consumer observes the token can race. Dispose defensively.
         try { _cts.Dispose(); } catch (ObjectDisposedException) { /* already disposed */ }
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="PipeServer"/>'s sync shim: a sync ServiceProvider.Dispose
+    /// throws for IAsyncDisposable-only services, and the agent's DI container is
+    /// disposed synchronously on exit.
+    /// </summary>
+    void IDisposable.Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
 

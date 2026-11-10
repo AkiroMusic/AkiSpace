@@ -86,27 +86,32 @@ public sealed class AgentRunner
     /// </summary>
     private void OnBatchReceived(RelativeMouseBatch batch)
     {
-        // TryWrite returns false only when a batch was dropped to admit this one
-        // (DropOldest always makes room) — log, don't spam: the drop IS the policy.
-        if (_batches.Writer.TryWrite(batch))
-        {
-            _logger.LogDebug("Queued batch {FirstSequence} ({Count} samples); queue depth {Depth}",
-                batch.FirstSequence, batch.Samples.Length, _batches.Reader.Count);
-        }
-        else
-        {
-            _logger.LogDebug("Batch queue saturated handling {FirstSequence}; oldest backlog dropped", batch.FirstSequence);
-        }
+        // With DropOldest, TryWrite only fails on a completed channel — the drop
+        // policy itself is invisible here. Drops are detected on the consumer side
+        // via sequence gaps (see ConsumeBatchesAsync).
+        _batches.Writer.TryWrite(batch);
     }
 
     /// <summary>
     /// Single-threaded consumer: replays each batch, then awaits its result send,
     /// logging (never swallowing) any failure. Runs until cancelled or completed.
+    /// Sequence gaps mark DropOldest losses that the writer side cannot see.
     /// </summary>
     private async Task ConsumeBatchesAsync(CancellationToken ct)
     {
+        ulong? lastSeen = null;
         await foreach (var batch in _batches.Reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
+            if (lastSeen is ulong seen && batch.FirstSequence != seen + 1)
+            {
+                _logger.LogWarning(
+                    "Batch sequence gap {Expected}->{Actual}; {Dropped} batch(es) dropped by the saturated queue",
+                    seen + 1, batch.FirstSequence, batch.FirstSequence - seen - 1);
+            }
+            lastSeen = batch.Samples.Length > 0
+                ? batch.FirstSequence + (ulong)(batch.Samples.Length - 1)
+                : batch.FirstSequence;
+
             var handled = await ReplayBatchAsync(batch, ct).ConfigureAwait(false);
             try
             {
@@ -148,7 +153,8 @@ public sealed class AgentRunner
                 // Flush the current sub-group once it spans more than the threshold.
                 if (group.Count > 0 && relTicks - groupTicks > GroupThresholdTicks)
                 {
-                    await FlushGroupAsync(group, replayStart, groupTicks, ct).ConfigureAwait(false);
+                    if (!await FlushGroupAsync(group, replayStart, groupTicks, ct).ConfigureAwait(false))
+                        return false;
                     group.Clear();
                     groupTicks = relTicks;
                 }
@@ -162,7 +168,8 @@ public sealed class AgentRunner
 
             if (group.Count > 0)
             {
-                await FlushGroupAsync(group, replayStart, groupTicks, ct).ConfigureAwait(false);
+                if (!await FlushGroupAsync(group, replayStart, groupTicks, ct).ConfigureAwait(false))
+                    return false;
             }
             return true;
         }
@@ -176,9 +183,11 @@ public sealed class AgentRunner
 
     /// <summary>
     /// Waits until the absolute schedule time for this sub-group, then emits a
-    /// single SendInput(INPUT[]) for all its buffered moves.
+    /// single SendInput(INPUT[]) for all its buffered moves. Returns false when
+    /// SendInput did not inject every event (the caller reports Handled=false —
+    /// a partial injection would leave the clone cursor out of sync anyway).
     /// </summary>
-    private async Task FlushGroupAsync(
+    private async Task<bool> FlushGroupAsync(
         List<User32.INPUT> group, long replayStart, long relTicks, CancellationToken ct)
     {
         var targetMs = relTicks * 1000.0 / Stopwatch.Frequency;
@@ -191,15 +200,18 @@ public sealed class AgentRunner
 
         var sent = User32.SendInput(
             (uint)group.Count, group.ToArray(), Marshal.SizeOf<User32.INPUT>());
-        // SendInput returns the number of events actually injected. 0 means every
-        // event was blocked (UIPI / an elevated window / input desktop mismatch) —
-        // reporting Handled:true in that case would silently fake mouse input.
+        // SendInput returns the number of events actually injected. A short count
+        // means events were blocked (UIPI / an elevated window / input desktop
+        // mismatch) — reporting Handled:true would silently fake mouse input.
         if (sent != group.Count)
         {
             _logger.LogWarning(
-                "SendInput injected {Sent}/{Total} mouse events (blocked events are typically UIPI/integrity related)",
-                sent, group.Count);
+                "SendInput injected {Sent}/{Total} mouse events, error {Error} " +
+                "(blocked events are typically UIPI/integrity related); batch reported as not handled",
+                sent, group.Count, Marshal.GetLastWin32Error());
+            return false;
         }
+        return true;
     }
 
     private static User32.INPUT CreateMouseMove(int deltaX, int deltaY) => new()

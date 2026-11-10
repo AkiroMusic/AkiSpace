@@ -96,6 +96,13 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
     /// raw-input handler takes <see cref="_gate"/> to snapshot subscriptions, so
     /// joining under the lock could deadlock against a dispatch in progress.
     /// </summary>
+    /// <summary>
+    /// Custom stop message: WM_QUIT must not be posted via PostMessage (per the
+    /// Win32 docs it is not a window message); this WM_APP message lands in the
+    /// hidden window's WndProc, which calls PostQuitMessage on its own thread.
+    /// </summary>
+    private const uint WM_APP_STOP = 0x8001; // WM_APP + 1
+
     private Thread? StopCoreLocked()
     {
         if (_thread == null || !_thread.IsAlive) return null;
@@ -116,7 +123,7 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
             }
             if (hwnd != IntPtr.Zero)
             {
-                User32.PostMessage(hwnd, 0x0012 /* WM_QUIT */, IntPtr.Zero, IntPtr.Zero);
+                User32.PostMessage(hwnd, WM_APP_STOP, IntPtr.Zero, IntPtr.Zero);
                 break;
             }
             if (!dying.IsAlive) break;
@@ -368,6 +375,13 @@ public sealed class RawInputMonitor : IRawInputMonitor, IDisposable
             if (msg == InputConstants.WM_INPUT)
             {
                 RawInputReceived?.Invoke(lParam);
+            }
+            else if (msg == WM_APP_STOP)
+            {
+                // WM_QUIT is not a window message and must not be PostMessage'd —
+                // the loop ends when THIS thread calls PostQuitMessage, which only
+                // the window's own WndProc can do reliably.
+                User32.PostQuitMessage(0);
             }
             return User32.DefWindowProc(hWnd, msg, wParam, lParam);
         }

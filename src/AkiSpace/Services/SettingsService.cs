@@ -127,17 +127,37 @@ public sealed class SettingsService
     /// (e.g. the global hotkey switch) can react without an app restart.</summary>
     public event Action? Changed;
 
-    /// <summary>Atomically replace the settings and persist to disk.</summary>
+    /// <summary>
+    /// Atomically replace the settings and persist to disk. The mutated clone is
+    /// written BEFORE it becomes <see cref="Current"/>: a failed disk write leaves
+    /// memory untouched instead of a memory-ahead-of-disk half-commit, and callers
+    /// can safely retry.
+    /// </summary>
     public void Update(Action<AppSettings> mutate)
     {
+        AppSettings committed;
         lock (_gate)
         {
             var clone = Clone(_settings);
             mutate(clone);
-            _settings = clone;
+            Sanitize(clone);
             SaveCore(clone);
+            _settings = clone;
+            committed = clone;
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>Rejects out-of-range values that hand-edited JSON or a bad migration
+    /// could inject — the UI clamps its own inputs, but the file is user-editable.</summary>
+    private static void Sanitize(AppSettings s)
+    {
+        s.RdpPort = Math.Clamp(s.RdpPort, 1, 65535);
+        s.DesktopWidth = Math.Clamp(s.DesktopWidth, 800, 7680);
+        s.DesktopHeight = Math.Clamp(s.DesktopHeight, 600, 4320);
+        s.ColorDepth = Math.Clamp(s.ColorDepth, 8, 32);
+        if (s.Language is not ("en" or "zh")) s.Language = "en";
+        if (s.Theme is not ("dark" or "amber" or "mint" or "pearl")) s.Theme = "dark";
     }
 
     private AppSettings LoadCore()
@@ -156,6 +176,7 @@ public sealed class SettingsService
             {
                 _logger.LogInformation("Upgrading settings.json ClonePassword to DPAPI protection");
             }
+            Sanitize(loaded);
             loaded.ClonePassword = SettingsProtection.Unprotect(loaded.ClonePassword);
             if (!string.IsNullOrEmpty(loaded.ClonePassword)
                 && loaded.ClonePassword.StartsWith(SettingsProtection.Prefix, StringComparison.Ordinal))
@@ -204,10 +225,10 @@ public sealed class SettingsService
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // _settings was already committed by Update, so memory is now ahead of
-            // disk. Surface the divergence and remove the stale temp file, then let
-            // the caller's error handling run.
-            _logger.LogError(ex, "Settings write failed; in-memory settings are ahead of disk at {Path}", _filePath);
+            // The caller's memory snapshot is untouched (Update commits only after a
+            // successful write), so the failure is fully retryable. Remove the stale
+            // temp file and let the caller's error handling run.
+            _logger.LogError(ex, "Settings write failed at {Path}; in-memory settings were NOT committed (retry the change)", _filePath);
             try { File.Delete(tmpPath); } catch { /* best-effort */ }
             throw;
         }

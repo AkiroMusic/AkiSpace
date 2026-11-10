@@ -52,19 +52,21 @@ public sealed class ProcessLauncher
                 Type.GetTypeFromProgID("Schedule.Service")!)!;
             dynamic? rootFolder = null;
             dynamic? registeredTask = null;
+            dynamic? taskDefinition = null;
+            dynamic? action = null;
             try
             {
                 taskService.Connect(null, null, null, null);
 
                 rootFolder = taskService.GetFolder("\\");
-                dynamic taskDefinition = taskService.NewTask(0);
+                taskDefinition = taskService.NewTask(0);
 
                 // Principal: run as the interactive user with highest privileges
                 taskDefinition.Principal.LogonType = TaskLogonInteractiveToken;
                 taskDefinition.Principal.RunLevel = TaskRunLevelHighest;
 
                 // Action: exec the target program
-                dynamic action = taskDefinition.Actions.Create(TaskActionExec);
+                action = taskDefinition.Actions.Create(TaskActionExec);
                 action.Path = exePath;
                 if (!string.IsNullOrWhiteSpace(arguments))
                     action.Arguments = arguments;
@@ -78,9 +80,12 @@ public sealed class ProcessLauncher
                 registeredTask.RunEx(null, TaskRunUseSessionId, checked((int)sessionId), null);
 
                 // RunEx only REQUESTS the run. Deleting the task immediately can cancel
-                // a launch that hasn't spawned yet, so wait until the task reports
-                // Running before removing it. Bounded so a stuck task can't hang the UI.
-                if (WaitForTaskRunning(registeredTask, TimeSpan.FromSeconds(2)))
+                // a launch that hasn't spawned yet, so wait for evidence of execution
+                // before removing it. Two success signals: the transient Running state,
+                // or LastTaskResult==0 (a fast-exiting program already completed —
+                // Waiting only for Running would misreport those as failures). Bounded
+                // so a stuck task can't hang the UI.
+                if (WaitForTaskExecution(registeredTask, TimeSpan.FromSeconds(2)))
                 {
                     _logger.LogInformation("Launched {Exe} in child session {SessionId} (task {Task})",
                         exePath, sessionId, taskName);
@@ -88,7 +93,7 @@ public sealed class ProcessLauncher
                 }
 
                 _logger.LogWarning(
-                    "Task {Task} did not reach Running within the wait window; launch may not have started",
+                    "Task {Task} showed no execution evidence within the wait window; launch may not have started",
                     taskName);
                 return false;
             }
@@ -104,6 +109,8 @@ public sealed class ProcessLauncher
                     _logger.LogWarning(cleanupEx, "Failed to delete temp task {Task}", taskName);
                 }
                 ReleaseComObject(registeredTask);
+                ReleaseComObject(action);
+                ReleaseComObject(taskDefinition);
                 ReleaseComObject(rootFolder);
                 ReleaseComObject(taskService);
             }
@@ -133,8 +140,12 @@ public sealed class ProcessLauncher
         }
     }
 
-    /// <summary>Polls the task state until it reports Running or the deadline passes.</summary>
-    private static bool WaitForTaskRunning(dynamic registeredTask, TimeSpan deadline)
+    /// <summary>
+    /// Polls for evidence the launch actually executed: either the transient
+    /// Running state, or LastTaskResult == 0 (S_OK) from a run that already
+    /// completed. Success not-yet-run (0x00041303) keeps polling until the deadline.
+    /// </summary>
+    private static bool WaitForTaskExecution(dynamic registeredTask, TimeSpan deadline)
     {
         var end = Environment.TickCount64 + (long)deadline.TotalMilliseconds;
         while (Environment.TickCount64 < end)
@@ -142,6 +153,7 @@ public sealed class ProcessLauncher
             try
             {
                 if ((int)registeredTask.State == TaskStateRunning) return true;
+                if ((int)registeredTask.LastTaskResult == 0) return true;
             }
             catch
             {

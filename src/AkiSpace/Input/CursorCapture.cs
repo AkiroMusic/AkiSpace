@@ -220,7 +220,9 @@ public sealed class CursorCapture : IDisposable
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         try
         {
-            // Drain the queue so a queued Release still runs, then stop the loop.
+            // A capture active at dispose time must not survive it: enqueue the
+            // release BEFORE completing the queue so the owner thread runs it.
+            _ops.Add(ReleaseCore);
             _ops.CompleteAdding();
             if (!_ownerThread.Join(TimeSpan.FromSeconds(2)))
                 _ownerThread.Interrupt();

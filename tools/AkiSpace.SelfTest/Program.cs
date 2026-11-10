@@ -231,10 +231,15 @@ void Check(string name, bool pass, string? detail = null)
         Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.ChildSessionManager>.Instance);
     var canRunE2E = Environment.UserInteractive
         && Environment.GetEnvironmentVariable("CI") != "true"
-        && mgrCheck.IsRdpListenerActive();
+        && mgrCheck.IsRdpListenerActive()
+        // Credentials are NOT hardcoded (a public repo is not credential storage);
+        // the real-connect test only runs when the operator provides them.
+        && Environment.GetEnvironmentVariable("AKISPACE_E2E_USER") is { Length: > 0 }
+        && Environment.GetEnvironmentVariable("AKISPACE_E2E_PASSWORD") is { Length: > 0 };
     if (!canRunE2E)
     {
-        Console.WriteLine("[SKIP] E2E test: non-interactive session or RDP listener not active");
+        Console.WriteLine("[SKIP] E2E test: non-interactive session, RDP listener not active, " +
+                          "or AKISPACE_E2E_USER / AKISPACE_E2E_PASSWORD not set");
     }
     else
     {
@@ -276,9 +281,11 @@ void Check(string name, bool pass, string? detail = null)
             form.Shown += (_, _) =>
             {
                 Console.WriteLine("[E2E] Form shown, connecting with credentials (standard RDP)...");
+                var e2eUser = Environment.GetEnvironmentVariable("AKISPACE_E2E_USER");
+                var e2ePass = Environment.GetEnvironmentVariable("AKISPACE_E2E_PASSWORD");
                 host.Connect(1280, 720, 32, mgr.GetConfiguredRdpPort(),
                     true, true, false,
-                    userName: "AkiSpaceUser", password: "lb33", useChildSession: false);
+                    userName: e2eUser, password: e2ePass, useChildSession: false);
             };
 
             form.Show();
@@ -401,11 +408,22 @@ void _Wave5Tests()
         var settings = new AkiSpace.Services.SettingsService(nullLogS, dir);
         settings.Update(s => s.ConnectionMode = AkiSpace.Services.ConnectionMode.StandardRdp);
         var verifier = new AkiSpace.Services.EnvironmentVerifier(nullLogV, mgr, settings);
-        var fixResults = verifier.ApplyAllFixes(alsoDisableRdpWrapper: false);
-        var hasPreserve = fixResults.Any(r => r.Id == "FixKeepWrapper");
-        var hasDisable = fixResults.Any(r => r.Id == "FixDisableWrapper");
-        Check("StandardRdp mode: ApplyAllFixes preserves RDP Wrapper hook", hasPreserve && !hasDisable,
-            $"preserve={hasPreserve}, disable={hasDisable}");
+        // ApplyAllFixes MUTATES the host machine (registry, firewall, TermService
+        // restart, child sessions) — a program named SelfTest must never do that by
+        // default. It only runs behind an explicit opt-in, on a disposable machine.
+        if (Environment.GetEnvironmentVariable("AKISPACE_SELFTEST_ALLOW_FIXES") == "1")
+        {
+            var fixResults = verifier.ApplyAllFixes(alsoDisableRdpWrapper: false);
+            var hasPreserve = fixResults.Any(r => r.Id == "FixKeepWrapper");
+            var hasDisable = fixResults.Any(r => r.Id == "FixDisableWrapper");
+            Check("StandardRdp mode: ApplyAllFixes preserves RDP Wrapper hook", hasPreserve && !hasDisable,
+                $"preserve={hasPreserve}, disable={hasDisable}");
+        }
+        else
+        {
+            Console.WriteLine("[SKIP] ApplyAllFixes: mutates the host (registry/firewall/TermService). " +
+                              "Set AKISPACE_SELFTEST_ALLOW_FIXES=1 on a disposable machine to run it.");
+        }
         Directory.Delete(dir, true);
     }
 

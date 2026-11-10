@@ -388,3 +388,9 @@ public static partial class User32
     [DllImport("user32.dll")]
     public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
 }
+
+public static partial class User32
+{
+    [DllImport("user32.dll")]
+    public static extern void PostQuitMessage(int nExitCode);
+}

@@ -94,9 +94,11 @@ public sealed class MouseForwarder : IDisposable
     }
 
     /// <summary>
-    /// Enables or disables game-mouse mode. When enabled, the pipe server
-    /// starts listening and raw input is captured; forwarding activates only
-    /// when the RDP window is focused.
+    /// Enables or disables game-mouse forwarding. The pipe server keeps LISTENING in
+    /// both states: stopping it would disconnect (and terminate) the already-running
+    /// replay agent, and nothing re-launches the agent mid-session — an ON/OFF/ON
+    /// cycle would then never forward again. Disabling only stops consuming input
+    /// and releases the cursor; the agent connection stays alive across toggles.
     /// </summary>
     public void SetGameMouseModeEnabled(bool enabled)
     {
@@ -118,20 +120,27 @@ public sealed class MouseForwarder : IDisposable
             }
             else
             {
-                _subscription?.Dispose();
-                _subscription = null;
-                _pollTimer?.Dispose();
-                _pollTimer = null;
-                _forwardingActive = false;
-                _accumulatedX = _accumulatedY = 0;
-                _cursorCapture.Release();
-
-                // Stop the pipe server so we don't keep the listening handle
-                // open while the feature is off. Fire-and-forget because this
-                // is a synchronous event-handler call path.
-                _ = _pipeServer.StopAsync();
+                DisableCoreLocked();
             }
         }
+    }
+
+    /// <summary>Stops consuming and releases the cursor. Runs under <see cref="_gate"/>;
+    /// does NOT check <see cref="_disposed"/> (Dispose calls this after setting it —
+    /// an early return here would leak the subscription, timer and pipe server).</summary>
+    private void DisableCoreLocked()
+    {
+        _subscription?.Dispose();
+        _subscription = null;
+        _pollTimer?.Dispose();
+        _pollTimer = null;
+        _forwardingActive = false;
+        _accumulatedX = _accumulatedY = 0;
+        _accumulationStartedAt = 0;
+        _cursorCapture.Release();
+
+        // Keep the pipe server listening so the agent survives toggles; the listener
+        // handle is idle while the feature is off.
     }
 
     public void Dispose()
@@ -139,10 +148,16 @@ public sealed class MouseForwarder : IDisposable
         lock (_gate)
         {
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-            SetGameMouseModeEnabled(false);
+            // DisableCoreLocked deliberately does not check _disposed — this is the
+            // path that must actually tear everything down (an early return would
+            // leak the subscription, poll timer and pipe server).
+            DisableCoreLocked();
             _pipeServer.ClientConnected -= OnClientConnected;
             _cursorCapture.Dispose();
         }
+        // The pipe server's StopAsync is fire-and-forget by design; on process exit
+        // the shell watchdog bounds the shutdown either way.
+        _ = _pipeServer.StopAsync();
     }
 
     // ---------------------------------------------------------------- pipe wiring
@@ -151,11 +166,32 @@ public sealed class MouseForwarder : IDisposable
     {
         lock (_gate) _primaryConnection = connection;
         _logger.LogInformation("Mouse pipe client connected");
+        connection.ResultReceived += OnResultReceived;
         connection.Disconnected += () =>
         {
-            lock (_gate) _primaryConnection = null;
+            lock (_gate)
+            {
+                _primaryConnection = null;
+                // Drop any in-flight accumulation — replaying stale deltas after a
+                // reconnect would teleport the clone cursor.
+                _accumulatedX = _accumulatedY = 0;
+                _accumulationStartedAt = 0;
+            }
             _cursorCapture.Release();
         };
+    }
+
+    private void OnResultReceived(RelativeMouseResult result)
+    {
+        // The agent reports per-batch injection success. A not-handled batch means
+        // SendInput was blocked (UIPI/input desktop) — forwarding is futile while
+        // that persists, so release the cursor instead of capturing input that
+        // goes nowhere.
+        if (!result.Handled)
+        {
+            _logger.LogWarning("Agent reported batch {Sequence} not handled; releasing cursor", result.LastSequence);
+            _cursorCapture.Release();
+        }
     }
 
     // ---------------------------------------------------------------- raw input path
@@ -201,6 +237,11 @@ public sealed class MouseForwarder : IDisposable
                     "Mouse batch discarded: no agent connection (replay agent not running). " +
                     "Game mouse mode is ON but batches go nowhere.");
             }
+            // Actually DISCARD the accumulation: keeping it would replay stale
+            // deltas (a potentially huge cursor jump) once the agent reconnects.
+            _accumulatedX = 0;
+            _accumulatedY = 0;
+            _accumulationStartedAt = 0;
             return;
         }
         _noAgentWarned = false;
@@ -255,7 +296,10 @@ public sealed class MouseForwarder : IDisposable
             var altPressed = (User32.GetAsyncKeyState(InputConstants.VK_LMENU) & InputConstants.KEY_PRESSED) != 0 ||
                              (User32.GetAsyncKeyState(InputConstants.VK_RMENU) & InputConstants.KEY_PRESSED) != 0;
             bool rdpFocused = _isRdpFocused?.Invoke() == true;
-            bool shouldForward = rdpFocused && !altPressed;
+            bool agentConnected = IsAgentConnected;
+            // Forwarding requires a live agent: without one the input goes nowhere
+            // while the cursor stays clipped+hidden on the host.
+            bool shouldForward = rdpFocused && !altPressed && agentConnected;
 
             lock (_gate)
             {
@@ -279,6 +323,15 @@ public sealed class MouseForwarder : IDisposable
                 }
 
                 if (!_forwardingActive) return;
+
+                // Independent flush tick: the event-driven flush only fires on the
+                // NEXT raw-input event, so a final partial batch would linger until
+                // the mouse moves again. The 5 ms timer guarantees it goes out.
+                var elapsedMs = (Stopwatch.GetTimestamp() - _accumulationStartedAt) * 1000.0 / Stopwatch.Frequency;
+                if (_accumulationStartedAt != 0 && elapsedMs >= FlushInterval.TotalMilliseconds)
+                {
+                    FlushLocked();
+                }
 
                 var bounds = _getCaptureBounds?.Invoke() ?? default;
                 if (bounds.Width > 0 && !_cursorCapture.IsCapturing)

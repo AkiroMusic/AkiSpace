@@ -60,6 +60,8 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
    ```
    Then enter this username/password in AkiSpace Settings.
 
+   > ⚠️ The clone session is **not a security sandbox**: programs in it run elevated (Task Scheduler `RunLevel=Highest`) and the account is an administrator. Only run software you trust in the clone.
+
 4. **Connect**: Click "Connect" or press `Ctrl+Shift+D` → embedded window shows clone desktop → click "Launch Program" to run apps in the clone. (Game Mouse button is hidden in child-session mode.)
 
 5. **Quick Actions**:
@@ -72,7 +74,7 @@ Create a second independent desktop session ("Desktop Clone") on a single Window
 
 ## Unlock Multi-Session (Home Edition / RDP Disabled)
 
-Windows Home lacks RDP host & multi-session support. AkiSpace's "One-Click Fix" handles registry/service/firewall, but **RDP Unlock Layer must be installed manually**:
+Windows Home lacks RDP host & multi-session support. AkiSpace's "One-Click Fix" handles registry/service/firewall, and Env Check's **One-Click Install** downloads and installs the RDP unlock layer for you (SHA-256-verified official build, one UAC prompt). The manual steps below are the fallback if you prefer to control the source yourself:
 
 ### 1. Download RDP Wrapper
 
@@ -256,6 +258,8 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
    ```
    然后在 AkiSpace「设置」里填入该账户的用户名/密码。
 
+   > ⚠️ 分身会话**不是安全沙箱**：其中的程序以提权方式运行（计划任务 `RunLevel=Highest`），且该账户属于管理员组。请只在分身中运行你信任的软件。
+
 4. **连接**：点击「连接」或按 `Ctrl+Shift+D` → 内嵌窗口显示分身桌面 → 点击「启动程序」选择要运行的程序。（子会话模式下「游戏鼠标」按钮被隐藏。）
 
 5. **快捷操作**：
@@ -268,7 +272,7 @@ Run Self-Test: `dotnet run --project tools/AkiSpace.SelfTest`
 
 ## 解锁多会话（家庭版 / RDP 未启用时）
 
-Windows 家庭版不提供 RDP 主机与多会话支持。AkiSpace 的「一键修复」会处理注册表/服务/防火墙，但 **RDP 解锁层需要手动安装**：
+Windows 家庭版不提供 RDP 主机与多会话支持。AkiSpace 的「一键修复」会处理注册表/服务/防火墙；「环境检查」中的**一键安装**会自动下载并安装 RDP 解锁层（官方发布源 + SHA-256 校验 + 一次 UAC 授权）。以下手动步骤供希望自行控制来源的场景使用：
 
 ### 1. 下载 RDP Wrapper
 
