@@ -40,8 +40,8 @@ public sealed class RdpWrapperInstallerTests
         var psi = RdpWrapperInstaller.BuildInstallStartInfo(@"C:\x\rdpWrapper_x64.exe");
         Assert.Equal("runas", psi.Verb);
         Assert.True(psi.UseShellExecute);
-        Assert.Contains("-install", psi.Arguments);
-        Assert.Contains("-offline", psi.Arguments);
+        Assert.Contains("-install", psi.ArgumentList);
+        Assert.Contains("-offline", psi.ArgumentList);
     }
 
     [Fact]

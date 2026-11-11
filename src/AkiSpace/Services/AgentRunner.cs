@@ -46,15 +46,35 @@ public sealed class AgentRunner
     }
 
     /// <summary>
+    /// Test seam: when set, replaces the SendInput call (tests must not inject real
+    /// input into the interactive desktop). Arguments: (eventCount, inputs) → the
+    /// injected count the caller should treat as authoritative.
+    /// </summary>
+    internal Func<uint, User32.INPUT[], uint>? SendInputHook;
+
+    /// <summary>
+    /// How long one ConnectAsync attempt may keep retrying an unreachable primary
+    /// before the agent gives up and exits. The primary relaunches the agent on
+    /// every RDP login, so a timed-out agent loses nothing — the window exists
+    /// only to prevent an ORPHANED agent (primary exited with LogoffOnExit=false,
+    /// or crashed, while the child session lives on) from retrying forever. A
+    /// short-lived primary-side pipe failure still recovers inside the window.
+    /// Test seam: shrinkable.
+    /// </summary>
+    public TimeSpan ConnectGiveUpAfter { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Connects to the primary pipe and runs the replay loop until cancelled.
     /// <para>
     /// The connection is resilient: when the pipe drops while the primary is still
-    /// up (primary-side listener restart, transient failure), the runner retries
-    /// with 1/2/4/8 s exponential backoff against the SAME nonce — the primary only
-    /// rotates the nonce when it launches a NEW agent, and the primary's own restart
-    /// sweeps the old agent away, so a surviving agent reconnecting with its current
-    /// nonce is legitimate. An explicit handshake rejection means the nonce IS stale
-    /// (the primary relaunched) — retrying can never succeed, so the runner exits.
+    /// up (primary-side listener restart, transient failure), the runner reconnects
+    /// against the SAME nonce — the primary only rotates the nonce when it launches
+    /// a NEW agent, and the primary's own restart sweeps the old agent away, so a
+    /// surviving agent reconnecting with its current nonce is legitimate. An
+    /// explicit handshake rejection means the nonce IS stale (the primary
+    /// relaunched) — retrying can never succeed, so the runner exits. If the primary
+    /// stays unreachable for <see cref="ConnectGiveUpAfter"/>, the runner exits
+    /// instead of becoming an orphan that retries forever.
     /// </para>
     /// </summary>
     public async Task RunAsync(byte[] nonce, CancellationToken ct = default)
@@ -67,8 +87,8 @@ public sealed class AgentRunner
             var backoff = 0;
             while (!ct.IsCancellationRequested)
             {
-                var connected = await _pipeClient.ConnectAsync(ct).ConfigureAwait(false);
-                if (!connected) break; // explicit nonce rejection or cancellation — terminal
+                var connected = await _pipeClient.ConnectAsync(ct, ConnectGiveUpAfter).ConfigureAwait(false);
+                if (!connected) break; // explicit nonce rejection, give-up, or cancellation — terminal
 
                 backoff = 0;
                 _logger.LogInformation("Agent runner connected — replaying mouse batches");
@@ -119,39 +139,82 @@ public sealed class AgentRunner
     /// Single-threaded consumer: replays each batch, then awaits its result send,
     /// logging (never swallowing) any failure. Runs until cancelled or completed.
     /// Sequence gaps mark DropOldest losses that the writer side cannot see.
+    /// <para>
+    /// Stale batches are dropped HERE, not by an external drain: the channel is
+    /// declared <c>SingleReader</c>, so a concurrent TryRead from another thread
+    /// (a "drain on disconnect") violates the contract and corrupts the reader's
+    /// state. A batch dequeued while the pipe is down belongs to the dead
+    /// connection — replaying it after a reconnect would inject stale motion, and
+    /// its result would ride the NEW connection. The primary clears its own
+    /// accumulation on disconnect, so nothing is owed to it either. A replay
+    /// already in flight spans at most one ~8 ms sub-group — bounded by the ≥1 s
+    /// reconnect backoff, so no stale result can cross onto a new connection.
+    /// </para>
+    /// <para>
+    /// The loop is a plain 2 ms TryRead poll, deliberately NOT a parked
+    /// <c>ReadAllAsync</c>/<c>WaitToReadAsync</c>: after drop-heavy bursts and
+    /// reconnects the reader re-arms many times, and a stranded waiter (e.g. one
+    /// abandoned by a <c>WaitAsync</c> timeout, which stays registered — every
+    /// later write then completes the ABANDONED waiter and the live reader
+    /// starves) would silently freeze the replay pipeline. A 2 ms poll adds at
+    /// most 2 ms of latency — far below the ~8 ms replay-group pacing — and
+    /// cannot strand by construction.
+    /// </para>
     /// </summary>
     private async Task ConsumeBatchesAsync(CancellationToken ct)
     {
         ulong? lastSeen = null;
-        await foreach (var batch in _batches.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        var staleDropped = 0;
+        while (!ct.IsCancellationRequested)
         {
-            if (lastSeen is ulong seen && batch.FirstSequence != seen + 1)
+            while (_batches.Reader.TryRead(out var batch))
             {
-                _logger.LogWarning(
-                    "Batch sequence gap {Expected}->{Actual}; {Dropped} batch(es) dropped by the saturated queue",
-                    seen + 1, batch.FirstSequence, batch.FirstSequence - seen - 1);
-            }
-            lastSeen = batch.Samples.Length > 0
-                ? batch.FirstSequence + (ulong)(batch.Samples.Length - 1)
-                : batch.FirstSequence;
+                if (!_pipeClient.IsConnected)
+                {
+                    staleDropped++;
+                    continue;
+                }
+                if (staleDropped > 0)
+                {
+                    _logger.LogInformation(
+                        "Discarded {Count} batch(es) queued for the dead connection", staleDropped);
+                    staleDropped = 0;
+                }
 
-            var handled = await ReplayBatchAsync(batch, ct).ConfigureAwait(false);
-            try
-            {
-                // The wire field is LastSequence: cover every sample in the batch,
-                // not just the first one. (Empty batches keep FirstSequence — a
-                // length-1-minus-one wrap would report the previous batch's range.)
-                var lastSequence = batch.Samples.Length > 0
+                if (lastSeen is ulong seen && batch.FirstSequence != seen + 1)
+                {
+                    _logger.LogWarning(
+                        "Batch sequence gap {Expected}->{Actual}; {Dropped} batch(es) dropped by the saturated queue",
+                        seen + 1, batch.FirstSequence, batch.FirstSequence - seen - 1);
+                }
+                lastSeen = batch.Samples.Length > 0
                     ? batch.FirstSequence + (ulong)(batch.Samples.Length - 1)
                     : batch.FirstSequence;
-                await _pipeClient.SendResultAsync(
-                    new RelativeMouseResult(lastSequence, handled), ct).ConfigureAwait(false);
+
+                var handled = await ReplayBatchAsync(batch, ct).ConfigureAwait(false);
+                try
+                {
+                    // The wire field is LastSequence: cover every sample in the batch,
+                    // not just the first one. (Empty batches keep FirstSequence — a
+                    // length-1-minus-one wrap would report the previous batch's range.)
+                    var lastSequence = batch.Samples.Length > 0
+                        ? batch.FirstSequence + (ulong)(batch.Samples.Length - 1)
+                        : batch.FirstSequence;
+                    await _pipeClient.SendResultAsync(
+                        new RelativeMouseResult(lastSequence, handled), ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to send mouse result for batch {Sequence}", batch.FirstSequence);
+                }
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to send mouse result for batch {Sequence}", batch.FirstSequence);
-            }
+
+            await Task.Delay(2, ct).ConfigureAwait(false);
+            // The writer completes the channel in RunAsync's finally — an empty AND
+            // completed channel means the runner is shutting down; without this the
+            // poll would spin forever and the finally's `await consumer` would hang.
+            if (_batches.Reader.Completion.IsCompleted) break;
         }
     }
 
@@ -221,8 +284,10 @@ public sealed class AgentRunner
             await Task.Delay(TimeSpan.FromMilliseconds(delayMs), ct).ConfigureAwait(false);
         }
 
-        var sent = User32.SendInput(
-            (uint)group.Count, group.ToArray(), Marshal.SizeOf<User32.INPUT>());
+        var array = group.ToArray();
+        var sent = SendInputHook is { } hook
+            ? hook((uint)array.Length, array)
+            : User32.SendInput((uint)array.Length, array, Marshal.SizeOf<User32.INPUT>());
         // SendInput returns the number of events actually injected. A short count
         // means events were blocked (UIPI / an elevated window / input desktop
         // mismatch) — reporting Handled:true would silently fake mouse input.

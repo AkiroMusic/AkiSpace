@@ -199,6 +199,22 @@ public sealed class ConnectionController
     }
 
     /// <summary>
+    /// Ensures the pipe DACL admits the clone account BEFORE the next listening
+    /// stream is created (each NamedPipeServerStream bakes its ACL at creation).
+    /// Both enable paths — the toolbar toggle and a settings save landing through
+    /// <see cref="OnSettingsChanged"/> — must land this grant first, or a
+    /// cross-user agent is denied at connect time (the ChildSession→StandardRdp
+    /// live switch leaves the startup-time grant null because no clone account
+    /// was configured then). Cheap local SAM lookup; a CloneUsername change takes
+    /// effect from the NEXT listening stream on (the server creates one per
+    /// connection) and LaunchAgentInChildSession re-resolves before every launch.
+    /// </summary>
+    private void EnsurePipeDaclForGameMouse()
+    {
+        _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
+    }
+
+    /// <summary>
     /// Applies the persisted game-mouse setting to the forwarder and mirrors it into
     /// the toggle button state. Idempotent: SetGameMouseModeEnabled no-ops when the
     /// value already matches (ToggleGameMouse applies directly, then its own Update
@@ -212,6 +228,8 @@ public sealed class ConnectionController
         // an agent that never comes.
         var enabled = _settingsService.Current.ConnectionMode != ConnectionMode.ChildSession
                       && _settingsService.Current.GameMouseModeEnabled;
+        if (enabled)
+            EnsurePipeDaclForGameMouse();
         _mouseForwarder.SetGameMouseModeEnabled(enabled);
         if (_gameMouseOn != enabled)
         {
@@ -520,11 +538,10 @@ public sealed class ConnectionController
         var enabled = _mouseForwarder.IsGameMouseModeEnabled;
         if (!enabled)
         {
-            // Mirror OnShellLoaded's ordering: the clone-account grant must be in the
-            // pipe DACL BEFORE the next listening stream is created (stream-creation
-            // bakes the ACL), or a cross-user agent is denied at connect time. Cheap
-            // local SAM lookup, no-op for child-session mode.
-            _pipeServer.SetAllowedClientSid(TryResolveCloneSid());
+            // The clone-account grant must be in the pipe DACL BEFORE the next
+            // listening stream is created (stream-creation bakes the ACL), or a
+            // cross-user agent is denied at connect time.
+            EnsurePipeDaclForGameMouse();
         }
         _mouseForwarder.SetGameMouseModeEnabled(!enabled);
         _gameMouseOn = !enabled;

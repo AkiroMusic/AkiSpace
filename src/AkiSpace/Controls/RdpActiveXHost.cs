@@ -22,7 +22,10 @@ public sealed class RdpActiveXHost : AxHost
     private readonly ILogger<RdpActiveXHost> _logger;
     private readonly object _ocxGate = new();
     private IntPtr? _inputWindow;
-    private volatile bool _connecting;
+    // Owns the connecting flag with generation-based ownership: a superseded
+    // attempt's cleanup must not clear a NEWER attempt's in-flight state (see
+    // ConnectAttemptGate — extracted so the ownership rule is unit-testable).
+    private readonly ConnectAttemptGate _attemptGate = new();
     private CancellationTokenSource? _connectCts;
     private AxHost.ConnectionPointCookie? _eventCookie;
     private RdpEventSink? _eventSink;
@@ -98,7 +101,7 @@ public sealed class RdpActiveXHost : AxHost
     public bool IsConnected { get; private set; }
 
     /// <summary>True while a connection attempt (including retries) is in progress.</summary>
-    public bool IsConnecting => _connecting;
+    public bool IsConnecting => _attemptGate.IsConnecting;
 
     public bool IsFullScreen { get; private set; }
 
@@ -151,14 +154,14 @@ public sealed class RdpActiveXHost : AxHost
         bool smartSizing, bool keyboardHookToRemote, bool audioRedirected,
         string? userName = null, string? password = null, bool useChildSession = false)
     {
-        if (_connecting || GetConnectedState())
+        if (_attemptGate.IsConnecting || GetConnectedState())
         {
             _logger.LogWarning("Connect ignored: already connecting/connected");
             return;
         }
 
-        _connecting = true;
         IsFullScreen = false;
+        var generation = _attemptGate.Begin();
 
         // Reset the cancellation token for this connect attempt. DisconnectSession
         // (or Dispose) will cancel it so the retry loop exits cleanly when the
@@ -178,7 +181,7 @@ public sealed class RdpActiveXHost : AxHost
                 {
                     if (cts.IsCancellationRequested || IsDisposed || Disposing)
                     {
-                        _connecting = false;
+                        _attemptGate.End(generation);
                         return;
                     }
 
@@ -213,7 +216,7 @@ public sealed class RdpActiveXHost : AxHost
                         }
                         catch (OperationCanceledException)
                         {
-                            _connecting = false;
+                            _attemptGate.End(generation);
                             return;
                         }
                     }
@@ -221,7 +224,7 @@ public sealed class RdpActiveXHost : AxHost
             }
             finally
             {
-                _connecting = false;
+                _attemptGate.End(generation);
             }
         });
     }
@@ -524,11 +527,13 @@ public sealed class RdpActiveXHost : AxHost
     /// <summary>Disconnects the RDP session (child session stays alive).</summary>
     public void DisconnectSession()
     {
-        // Cancel any in-flight retry loop BEFORE clearing _connecting, so the
-        // background Task.Run can observe the cancel and exit cleanly without
-        // firing a second connect attempt.
+        // Invalidate every in-flight attempt's ownership FIRST: the generation bump
+        // is what stops a dying attempt's cleanup from clearing the flag a NEWER
+        // connect may have already set (fast Disconnect→reconnect). Then cancel the
+        // retry loop so it observes the cancellation and exits without a second
+        // dial.
+        _attemptGate.Invalidate();
         Interlocked.Exchange(ref _connectCts, null)?.Cancel();
-        _connecting = false;
         IsConnected = false;
         try
         {
@@ -757,7 +762,7 @@ public sealed class RdpActiveXHost : AxHost
         {
             case 3: // OnLoginComplete
                 {
-                    _connecting = false;
+                    _attemptGate.Invalidate();
                     IsConnected = true;
                     _logger.LogInformation("RDP login complete — desktop ready");
                     LoginCompleted?.Invoke();
@@ -765,7 +770,7 @@ public sealed class RdpActiveXHost : AxHost
                 }
             case 4: // OnDisconnected
                 {
-                    _connecting = false;
+                    _attemptGate.Invalidate();
                     IsConnected = false;
                     var reason = args.Length > 0 ? Convert.ToInt32(args[0]) : -1;
                     var extended = TryGetExtendedDisconnectReason();
@@ -845,7 +850,7 @@ public sealed class RdpActiveXHost : AxHost
                 }
             case 10: // OnFatalError (correct DispId = 10, was wrongly 6)
                 {
-                    _connecting = false;
+                    _attemptGate.Invalidate();
                     IsConnected = false;
                     var code = args.Length > 0 ? Convert.ToInt32(args[0]) : -1;
                     _logger.LogError("RDP fatal error {Code}", code);
@@ -881,7 +886,7 @@ public sealed class RdpActiveXHost : AxHost
                     }
                     else
                     {
-                        _connecting = false;
+                        _attemptGate.Invalidate();
                         IsConnected = false;
                         ConnectionFailed?.Invoke($"登录失败（错误代码 {code}）");
                     }
@@ -889,7 +894,7 @@ public sealed class RdpActiveXHost : AxHost
                 }
             case 33: // OnAutoReconnected (treat as successful login)
                 {
-                    _connecting = false;
+                    _attemptGate.Invalidate();
                     IsConnected = true;
                     _logger.LogInformation("RDP auto-reconnected — desktop ready");
                     LoginCompleted?.Invoke();
@@ -1037,4 +1042,58 @@ internal sealed class RdpEventSink : RdpCom.IMsTscAxEvents
         [System.Runtime.InteropServices.In] int attemptCount,
         [System.Runtime.InteropServices.In] int maxAttemptCount)
     { }
+}
+
+/// <summary>
+/// Generation-based ownership gate for the shared "connecting" flag.
+///
+/// A connect attempt's retry task can outlive its own attempt: a fast
+/// Disconnect→reconnect leaves the OLD task's cleanup (its finally block) running
+/// while the NEW attempt has already set the flag. With a plain shared bool, the
+/// old cleanup would clear the new attempt's in-flight state and a third Connect
+/// could pass the re-entrancy guard. Each attempt therefore captures the
+/// generation returned by <see cref="Begin"/> and only <see cref="End"/>s the flag
+/// if it still owns it; <see cref="Invalidate"/> (Disconnect, or a terminal COM
+/// event) bumps the generation so every pending cleanup becomes a no-op.
+///
+/// Extracted from <see cref="RdpActiveXHost"/> because an AxHost cannot be
+/// instantiated in unit tests (its type chain pulls in the MSTSC COM control) —
+/// the ownership rule itself is what the tests exercise.
+/// </summary>
+internal sealed class ConnectAttemptGate
+{
+    private int _generation;
+    private volatile bool _connecting;
+
+    /// <summary>True while the current attempt is in flight.</summary>
+    public bool IsConnecting => _connecting;
+
+    /// <summary>Starts an attempt: sets the flag and returns the attempt's generation.</summary>
+    public int Begin()
+    {
+        _connecting = true;
+        return Interlocked.Increment(ref _generation);
+    }
+
+    /// <summary>
+    /// Ends everything: invalidates all in-flight attempts' ownership and clears the
+    /// flag. Used by Disconnect and by terminal COM events (login complete,
+    /// disconnected, fatal error) which mark the control's real state.
+    /// </summary>
+    public void Invalidate()
+    {
+        Interlocked.Increment(ref _generation);
+        _connecting = false;
+    }
+
+    /// <summary>
+    /// Attempt cleanup: clears the flag ONLY while the attempt still owns it. A
+    /// superseded attempt (Disconnect + newer Begin, or a terminal event) must not
+    /// touch the flag — it belongs to the newer state.
+    /// </summary>
+    public void End(int generation)
+    {
+        if (Volatile.Read(ref _generation) == generation)
+            _connecting = false;
+    }
 }

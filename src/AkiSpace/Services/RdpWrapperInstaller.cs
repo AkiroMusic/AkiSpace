@@ -135,10 +135,17 @@ public sealed class RdpWrapperInstaller
     /// installer itself stops/starts TermService — one UAC prompt covers everything.
     /// Public so SelfTest can assert the shape.
     /// </summary>
-    public static ProcessStartInfo BuildInstallStartInfo(string exePath) =>
-        new(exePath, "-install -offline")
+    public static ProcessStartInfo BuildInstallStartInfo(string exePath)
+    {
+        // ArgumentList, not a command-line string: the pinned verbs are separate
+        // argv tokens and nothing ever interpolates into a shell command line.
+        var psi = new ProcessStartInfo(exePath)
         {
             UseShellExecute = true,
             Verb = "runas",
         };
+        psi.ArgumentList.Add("-install");
+        psi.ArgumentList.Add("-offline");
+        return psi;
+    }
 }

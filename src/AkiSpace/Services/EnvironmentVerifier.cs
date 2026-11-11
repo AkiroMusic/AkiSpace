@@ -446,39 +446,37 @@ public sealed class EnvironmentVerifier
     /// <summary>Attribute-level verdict for the loopback block rule.</summary>
     internal enum FirewallRuleState { Missing, Correct, Incorrect, Unknown }
 
+    /// <summary>FWP_E_NOT_FOUND — the HRESULT that reliably means "no such rule".</summary>
+    internal const int FwpENotFound = unchecked((int)0x8032000F);
+
     /// <summary>
-    /// Precise match of <paramref name="port"/> against a firewall LocalPorts/
-    /// RemotePorts scope string: a single port, a comma-separated list, an
-    /// inclusive "a-b" range, or "*" (any). Substring matching is not enough —
-    /// "3389" must not match a rule scoped to "13389", and "3389-4000" must.
-    /// Malformed tokens simply never match.
+    /// Classifies a COM failure while LOOKING UP the rule: only the documented
+    /// not-found HRESULT means Missing. Every other COM failure (access denied,
+    /// RPC down, unexpected shape) is Unknown — treating those as Missing would
+    /// let the repair path delete a rule it could not even see.
     /// </summary>
-    internal static bool LocalPortsMatch(string? ports, int port)
+    internal static FirewallRuleState ClassifyRuleLookupFailure(System.Runtime.InteropServices.COMException ex) =>
+        ex.HResult == FwpENotFound ? FirewallRuleState.Missing : FirewallRuleState.Unknown;
+
+    /// <summary>
+    /// Exact single-port match: AkiSpace blocks ONLY the configured RDP port, so a
+    /// Correct rule must carry exactly that port. A wildcard, a wider list ("3389,
+    /// 3390"), a range ("3389-4000") or a malformed token would all block inbound
+    /// traffic beyond the design intent — such a rule under our name is not the
+    /// rule we install and must be recreated.
+    /// </summary>
+    internal static bool LocalPortsExactly(string? ports, int port)
     {
         if (string.IsNullOrWhiteSpace(ports)) return false;
-        if (ports.Trim() == "*") return true;
-        foreach (var raw in ports.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var tokens = ports.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0) return false;
+        foreach (var raw in tokens)
         {
-            if (raw == "*") return true;
-            var dash = raw.IndexOf('-');
-            if (dash < 0)
-            {
-                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var single)
-                    && single == port)
-                    return true;
-            }
-            else
-            {
-                var lo = raw[..dash];
-                var hi = raw[(dash + 1)..];
-                if (int.TryParse(lo, NumberStyles.Integer, CultureInfo.InvariantCulture, out var low)
-                    && int.TryParse(hi, NumberStyles.Integer, CultureInfo.InvariantCulture, out var high)
-                    && high >= low
-                    && port >= low && port <= high)
-                    return true;
-            }
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+                || value != port)
+                return false;
         }
-        return false;
+        return true;
     }
 
     /// <summary>
@@ -495,22 +493,44 @@ public sealed class EnvironmentVerifier
     /// <summary>
     /// Reads the rule via the Windows Firewall COM API (NetFwPolicy2) and validates
     /// every attribute that enforces the security boundary: Enabled, Inbound, Block,
-    /// TCP, the configured port (precisely parsed), RemoteAddresses = any, and
-    /// Profiles = all. Name-only checks cannot see an action flipped to Allow, a
-    /// port narrowed to "13389", or a profile restriction that gaps the protection.
-    /// Returns Unknown when the COM API itself is unreadable — callers must treat
-    /// Unknown as a FAILURE (fail closed), never as "the rule is fine".
+    /// TCP, the configured port (EXACT single-port scope), RemoteAddresses = any,
+    /// and Profiles = all. Name-only checks cannot see an action flipped to Allow,
+    /// a port narrowed to "13389", or a profile restriction that gaps the protection.
+    ///
+    /// Failure classification is deliberate: a lookup that provably finds no rule is
+    /// Missing; ANY other failure (COM unavailable, access denied, RPC error, or an
+    /// attribute read blowing up on an existing rule) is Unknown — callers must
+    /// treat Unknown as a FAILURE (fail closed), never bless it or repair blindly.
     /// </summary>
     internal static FirewallRuleState GetFirewallLoopbackRuleState(int port, string ruleName)
     {
+        object? policyObj = null;
+        object? rulesObj = null;
+        object? ruleObj = null;
         try
         {
             var policyType = Type.GetTypeFromProgID("HNetCfg.FwPolicy2", throwOnError: false);
             if (policyType is null) return FirewallRuleState.Unknown;
-            dynamic policy = Activator.CreateInstance(policyType)!;
+            policyObj = Activator.CreateInstance(policyType)!;
+            dynamic policy = policyObj;
+            dynamic rules = policy.Rules;
+            rulesObj = rules;
             try
             {
-                dynamic rule = policy.Rules.Item(ruleName);
+                ruleObj = rules.Item(ruleName);
+            }
+            catch (System.Runtime.InteropServices.COMException ex)
+            {
+                return ClassifyRuleLookupFailure(ex);
+            }
+            catch (Exception)
+            {
+                return FirewallRuleState.Unknown;
+            }
+
+            try
+            {
+                dynamic rule = ruleObj!;
                 var localPorts = Convert.ToString(rule.LocalPorts, CultureInfo.InvariantCulture);
                 var remoteAddresses = Convert.ToString(rule.RemoteAddresses, CultureInfo.InvariantCulture);
                 var profiles = Convert.ToInt32(rule.Profiles, CultureInfo.InvariantCulture);
@@ -518,27 +538,43 @@ public sealed class EnvironmentVerifier
                          && rule.Action == 1  // NET_FW_ACTION_BLOCK
                          && rule.Direction == 1 // NET_FW_DIRECTION_IN
                          && rule.Protocol == 6  // TCP
-                         && LocalPortsMatch(localPorts, port)
+                         && LocalPortsExactly(localPorts, port)
                          && RemoteAddressesAreAny(remoteAddresses)
                          && profiles == NetFwProfile2All;
                 return ok ? FirewallRuleState.Correct : FirewallRuleState.Incorrect;
             }
-            finally
+            catch (Exception)
             {
-                if (System.Runtime.InteropServices.Marshal.IsComObject(policy))
-                    System.Runtime.InteropServices.Marshal.FinalReleaseComObject(policy);
+                // The rule EXISTS but its attributes could not be read (COM/RPC/ACL
+                // hiccup). Never classify as Missing — the repair path would delete
+                // a rule it could not see. Fail closed instead.
+                return FirewallRuleState.Unknown;
             }
         }
-        catch (System.Runtime.InteropServices.COMException)
+        catch (System.Runtime.InteropServices.COMException ex)
         {
-            // Rules.Item throws when the rule is absent.
-            return FirewallRuleState.Missing;
+            // The Rules collection / policy object itself failed before any lookup.
+            return ex.HResult == FwpENotFound ? FirewallRuleState.Missing : FirewallRuleState.Unknown;
         }
         catch (Exception)
         {
             // COM unavailable / unexpected shape — the rule cannot be verified.
             return FirewallRuleState.Unknown;
         }
+        finally
+        {
+            ReleaseComObject(ruleObj);
+            ReleaseComObject(rulesObj);
+            ReleaseComObject(policyObj);
+        }
+    }
+
+    /// <summary>Best-effort deterministic RCW release; GC remains the fallback.</summary>
+    private static void ReleaseComObject(object? rcw)
+    {
+        if (rcw is null || !System.Runtime.InteropServices.Marshal.IsComObject(rcw)) return;
+        try { System.Runtime.InteropServices.Marshal.FinalReleaseComObject(rcw); }
+        catch { /* already released */ }
     }
 
     private bool EnsureFirewallLoopbackRule()

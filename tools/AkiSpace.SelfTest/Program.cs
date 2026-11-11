@@ -376,7 +376,9 @@ void _Wave5Tests()
         Directory.CreateDirectory(dir);
         var nullLog = Microsoft.Extensions.Logging.Abstractions.NullLogger<AkiSpace.Services.SettingsService>.Instance;
         var svc = new AkiSpace.Services.SettingsService(nullLog, dir);
-        svc.Update(s => s.ClonePassword = "mysecret-12345");
+        // Generated fixture (not a literal): the round-trip must hold for any value.
+        var fixturePassword = "pw-" + Guid.NewGuid().ToString("N");
+        svc.Update(s => s.ClonePassword = fixturePassword);
         // The on-disk JSON should contain the DPAPI: prefix.
         var onDisk = File.ReadAllText(Path.Combine(dir, "settings.json"));
         Check("Settings.json ClonePassword is DPAPI-encrypted on disk",
@@ -384,7 +386,7 @@ void _Wave5Tests()
             $"on-disk content: {onDisk[..Math.Min(120, onDisk.Length)]}...");
         // After reload, the password should round-trip back to the plaintext value.
         var svc2 = new AkiSpace.Services.SettingsService(nullLog, dir);
-        Check("Settings ClonePassword round-trips via DPAPI", svc2.Current.ClonePassword == "mysecret-12345",
+        Check("Settings ClonePassword round-trips via DPAPI", svc2.Current.ClonePassword == fixturePassword,
             $"got {svc2.Current.ClonePassword}");
         Directory.Delete(dir, true);
     }

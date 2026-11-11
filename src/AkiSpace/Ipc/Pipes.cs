@@ -52,6 +52,9 @@ public sealed class PipeServer : IAsyncDisposable, IDisposable
     /// <summary>True when a verified client is connected.</summary>
     public bool IsClientConnected { get; private set; }
 
+    /// <summary>Test seam: the most recently verified server-side connection (null when none).</summary>
+    internal PipeConnection? CurrentConnectionForTest { get; private set; }
+
     /// <summary>
     /// Bare pipe name this server registers (both NamedPipeServerStream and
     /// NamedPipeClientStream prepend <c>\\.\pipe\</c> themselves). Defaults to the
@@ -121,6 +124,7 @@ public sealed class PipeServer : IAsyncDisposable, IDisposable
                         IsClientConnected = true;
                         var connection = new PipeConnection(stream, _logger);
                         stream = null;
+                        CurrentConnectionForTest = connection;
                         try
                         {
                             connection.Disconnected += () => IsClientConnected = false;
@@ -133,6 +137,8 @@ public sealed class PipeServer : IAsyncDisposable, IDisposable
                             // threw — either way this accepted pipe instance must be
                             // released before the loop creates the next one.
                             IsClientConnected = false;
+                            if (CurrentConnectionForTest == connection)
+                                CurrentConnectionForTest = null;
                             await connection.DisposeAsync().ConfigureAwait(false);
                         }
                     }
@@ -414,22 +420,35 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
     /// <summary>Raised when a result frame arrives from the child.</summary>
     public event Action<RelativeMouseResult>? ResultReceived;
 
+    /// <summary>
+    /// Raised when the live connection drops (peer EOF / IO error). Lets consumers
+    /// discard per-connection state (e.g. queued-but-unreplayed input batches)
+    /// instead of carrying it across a reconnect.
+    /// </summary>
+    public event Action? ConnectionLost;
+
     /// <summary>Whether the pipe is currently connected.</summary>
     public bool IsConnected => _connection?.IsConnected == true;
 
+    /// <summary>Test seam: the live connection object (null when never connected).</summary>
+    internal PipeConnection? CurrentConnectionForTest => _connection;
+
     /// <summary>
     /// Connects to the primary's pipe, retrying until connected, explicitly rejected,
-    /// or cancelled. Returns true when connected with the handshake accepted; false
-    /// when the server rejected the nonce (retrying cannot succeed) or the attempt
-    /// was cancelled — callers treat false as terminal.
+    /// cancelled, or the optional give-up window elapses. Returns true when connected
+    /// with the handshake accepted; false when the server rejected the nonce (retrying
+    /// cannot succeed), the attempt was cancelled, or — with <paramref name="giveUpAfter"/>
+    /// set — the primary stayed unreachable for the whole window (it has most likely
+    /// exited; its restart relaunches the agent anyway).
     /// </summary>
-    public async Task<bool> ConnectAsync(CancellationToken ct = default)
+    public async Task<bool> ConnectAsync(CancellationToken ct = default, TimeSpan? giveUpAfter = null)
     {
         await _connectGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             if (IsConnected) return true;
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
+            var windowStart = DateTime.UtcNow;
 
             if (_nonce is not { Length: 32 })
             {
@@ -442,6 +461,14 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
 
             while (!linked.IsCancellationRequested)
             {
+                if (giveUpAfter is { } window && DateTime.UtcNow - windowStart >= window)
+                {
+                    _logger.LogWarning(
+                        "Primary pipe unreachable for {Window}; giving up (the primary relaunches the agent on every login)",
+                        window);
+                    return false;
+                }
+
                 NamedPipeClientStream? stream = null;
                 try
                 {
@@ -487,6 +514,7 @@ public sealed class PipeClient : IAsyncDisposable, IDisposable
                     stream = null; // ownership transferred to the connection
                     _connection.BatchReceived += b => BatchReceived?.Invoke(b);
                     _connection.ResultReceived += r => ResultReceived?.Invoke(r);
+                    _connection.Disconnected += () => ConnectionLost?.Invoke();
                     _ = _connection.RunAsync(_cts.Token);
                     return true;
                 }
@@ -586,7 +614,13 @@ public sealed class PipeConnection : IAsyncDisposable
     private readonly Stream _stream;
     private readonly ILogger _logger;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
-    private int _disposed;
+    // Two INDEPENDENT states — the old single _disposed flag made a natural EOF
+    // leak the stream: RunAsync's finally set the flag, then DisposeAsync saw it
+    // set and early-returned without releasing the stream. With a server-side
+    // maxNumberOfServerInstances of 1, an unreleased OS pipe instance blocks the
+    // next listener until a GC finalizer happens to run — flaky reconnects.
+    private int _connectionEnded; // read loop finished (or externally disposed) — IsConnected source
+    private int _streamDisposed;  // underlying stream handle released
 
     public PipeConnection(Stream stream, ILogger logger)
     {
@@ -594,12 +628,23 @@ public sealed class PipeConnection : IAsyncDisposable
         _logger = logger;
     }
 
-    public bool IsConnected => Volatile.Read(ref _disposed) == 0;
+    public bool IsConnected => Volatile.Read(ref _connectionEnded) == 0;
+
+    /// <summary>Test seam: whether the underlying stream has been released.</summary>
+    internal bool IsStreamReleased => Volatile.Read(ref _streamDisposed) != 0;
 
     public event Action<RelativeMouseBatch>? BatchReceived;
     public event Action<RelativeMouseResult>? ResultReceived;
     public event Action<string>? ControlMessageReceived;
     public event Action? Disconnected;
+
+    /// <summary>Releases the stream exactly once, from whichever path gets there first.</summary>
+    private async Task DisposeStreamOnceAsync()
+    {
+        if (Interlocked.Exchange(ref _streamDisposed, 1) != 0) return;
+        try { await _stream.DisposeAsync().ConfigureAwait(false); }
+        catch { /* already dead */ }
+    }
 
     public async Task RunAsync(CancellationToken ct = default)
     {
@@ -639,7 +684,11 @@ public sealed class PipeConnection : IAsyncDisposable
         catch (Exception ex) { _logger.LogWarning(ex, "Pipe read loop error"); }
         finally
         {
-            Volatile.Write(ref _disposed, 1);
+            // EVERY exit path (natural EOF, IO error, cancellation) must release
+            // the OS pipe handle — with maxNumberOfServerInstances=1 a leaked
+            // instance blocks the next listener.
+            Volatile.Write(ref _connectionEnded, 1);
+            await DisposeStreamOnceAsync().ConfigureAwait(false);
             Disconnected?.Invoke();
         }
     }
@@ -659,8 +708,8 @@ public sealed class PipeConnection : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        try { await _stream.DisposeAsync().ConfigureAwait(false); } catch { /* ignore */ }
+        Volatile.Write(ref _connectionEnded, 1);
+        await DisposeStreamOnceAsync().ConfigureAwait(false);
         // Deliberately NOT disposing _writeGate: a concurrent SendAsync may be inside
         // WaitAsync, and SemaphoreSlim.Dispose races such waiters into
         // ObjectDisposedException. An undisposed semaphore holds no unmanaged
